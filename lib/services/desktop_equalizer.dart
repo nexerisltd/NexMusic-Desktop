@@ -1,5 +1,4 @@
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'equalizer_backend.dart';
 
 /// 10-band ISO graphic equalizer for Windows/Linux/macOS, implemented by
@@ -45,20 +44,7 @@ class DesktopEqualizer implements EqualizerBackend {
   }
 
   Future<void> _apply() async {
-    try {
-      final player = JustAudioMediaKit.player(audioPlayer.id);
-      if (player == null) return;
-      if (!_enabled || _bands.every((b) => b.gain == 0.0)) {
-        await player.platform?.setProperty('af', '');
-        return;
-      }
-      final chain = _bands
-          .where((b) => b.gain != 0.0)
-          .map((b) => 'equalizer=f=${b.centerFrequency.toInt()}:width_type=o:width=2:g=${b.gain.toStringAsFixed(1)}')
-          .join(',');
-      await player.platform?.setProperty('af', 'lavfi=[$chain]');
-    } catch (_) {
-      // Swallow: EQ is a non-critical enhancement, never break playback.
-    }
+    // just_audio_media_kit 2.x no longer exposes its underlying media_kit
+    // player. Keep EQ state in the UI until a supported public API is added.
   }
 }

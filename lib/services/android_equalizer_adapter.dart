@@ -7,31 +7,33 @@ import 'equalizer_backend.dart';
 class AndroidEqualizerAdapter implements EqualizerBackend {
   final AndroidEqualizer androidEqualizer;
   List<EqBandInfo>? _cachedBands;
+  AndroidEqualizerParameters? _parameters;
 
-  AndroidEqualizerAdapter(this.androidEqualizer);
+  AndroidEqualizerAdapter(this.androidEqualizer) {
+    _loadParameters();
+  }
 
-  @override
-  double get minDecibels => androidEqualizer.parameters == null
-      ? -12.0
-      : androidEqualizer.parameters!.minDecibels;
-
-  @override
-  double get maxDecibels => androidEqualizer.parameters == null
-      ? 12.0
-      : androidEqualizer.parameters!.maxDecibels;
-
-  @override
-  List<EqBandInfo> get bands {
-    final params = androidEqualizer.parameters;
-    if (params == null) return _cachedBands ?? [];
-    _cachedBands = params.bands
+  Future<void> _loadParameters() async {
+    final parameters = await androidEqualizer.parameters;
+    _parameters = parameters;
+    _cachedBands = parameters.bands
         .map((b) => EqBandInfo(
               index: b.index,
               centerFrequency: b.centerFrequency,
               gain: b.gain,
             ))
         .toList();
-    return _cachedBands!;
+  }
+
+  @override
+  double get minDecibels => _parameters?.minDecibels ?? -12.0;
+
+  @override
+  double get maxDecibels => _parameters?.maxDecibels ?? 12.0;
+
+  @override
+  List<EqBandInfo> get bands {
+    return _cachedBands ?? [];
   }
 
   @override
@@ -39,8 +41,8 @@ class AndroidEqualizerAdapter implements EqualizerBackend {
 
   @override
   Future<void> setBandGain(int index, double gain) async {
-    final params = androidEqualizer.parameters;
-    if (params == null) return;
+    final params = _parameters ?? await androidEqualizer.parameters;
+    _parameters = params;
     await params.bands[index].setGain(gain);
   }
 }

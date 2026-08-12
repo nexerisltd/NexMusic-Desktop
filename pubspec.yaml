@@ -95,7 +95,6 @@ flutter:
   uses-material-design: true
   generate: true
   assets:
-    - assets/images/
     - icons/
 flutter_intl:
   enabled: true
