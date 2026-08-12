@@ -1,0 +1,54 @@
+name: Build Windows setup
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-setup:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Create setup executable
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Read application version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([^+\s]+)' | Select-Object -First 1).Matches[0].Groups[1].Value
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Windows setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexMusic-Desktop_${{ steps.version.outputs.value }}-setup
+          path: NexMusic-Desktop_${{ steps.version.outputs.value }}-setup.exe
+          if-no-files-found: error
+          retention-days: 30
