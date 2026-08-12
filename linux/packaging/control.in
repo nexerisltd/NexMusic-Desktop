@@ -1,0 +1,7 @@
+Package: nexmusic
+Version: VERSION
+Section: sound
+Priority: optional
+Architecture: amd64
+Maintainer: NexMusic <contact@nexapp.dev>
+Description: NexMusic - Music player

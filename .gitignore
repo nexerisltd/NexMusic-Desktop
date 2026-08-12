@@ -1,0 +1,99 @@
+# Build outputs
+build/
+*.exe
+*.msix
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# NexMusic installer outputs
+NexMusic-Desktop_v.*.exe
+*.iss.bak
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+*.iml
+*.ipr
+*.iws
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+pubspec.lock
+
+# Generated code
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+lib/generated_plugin_registrant.dart
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.history/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Windows native build artifacts
+windows/flutter/ephemeral/
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugin_registrant.h
+windows/flutter/generated_plugins.cmake
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Linux native build artifacts
+linux/flutter/ephemeral/
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugin_registrant.h
+linux/flutter/generated_plugins.cmake
+
+# macOS native build artifacts
+macos/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.swift
+**/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+DerivedData/
+
+# NuGet (Windows plugin dependencies)
+**/packages/*.nupkg
+**/packages/repositories.config
+
+# Logs
+*.log
+flutter_*.png
+
+# Coverage
+coverage/
+
+# Local env / secrets (see note below — none should ever live in a
+# tracked file, but this covers common patterns just in case)
+.env
+.env.*
+*.secrets.dart
+
+# Local secrets / credentials
+lib/services/*_secret.dart
+*.env
+
+# Installer output
+installer.exe
+NexMusic-Desktop_v.*.exe
+NexMusic-Setup.exe

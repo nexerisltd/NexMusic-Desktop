@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=NexMusic
+Comment=Music player
+Exec=nexmusic
+Icon=nexmusic
+Categories=AudioVideo;Audio;Music;Player;
+StartupWMClass=nexmusic
