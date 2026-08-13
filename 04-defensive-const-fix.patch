@@ -1,0 +1,15 @@
+diff --git a/lib/screens/home/home_page.dart b/lib/screens/home/home_page.dart
+index 89e7322..04acbe6 100644
+--- a/lib/screens/home/home_page.dart
++++ b/lib/screens/home/home_page.dart
+@@ -211,8 +211,8 @@ class _HomePageState extends State<_HomePage> {
+                                 state.continuation != null)
+                               const SizedBox(height: 50),
+                             if (state.loadingMore)
+-                              const Padding(
+-                                  padding: EdgeInsets.all(8.0),
++                              Padding(
++                                  padding: const EdgeInsets.all(8.0),
+                                   child: ExpressiveLoadingIndicator()),
+                           ],
+                         ),

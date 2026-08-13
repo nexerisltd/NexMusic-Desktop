@@ -1,0 +1,13 @@
+diff --git a/lib/screens/home/home_page.dart b/lib/screens/home/home_page.dart
+index 7acbed0..89e7322 100644
+--- a/lib/screens/home/home_page.dart
++++ b/lib/screens/home/home_page.dart
+@@ -181,7 +181,7 @@ class _HomePageState extends State<_HomePage> {
+                                   padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                                   child: TextPlaceholder(height: 20),
+                                 ),
+-                                const ShimmerCarouselRow(),
++                                ShimmerCarouselRow(),
+                               ],
+                             ),
+                           ),

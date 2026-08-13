@@ -1,0 +1,55 @@
+diff --git a/lib/screens/home/home_page.dart b/lib/screens/home/home_page.dart
+index 04acbe6..4a4c20a 100644
+--- a/lib/screens/home/home_page.dart
++++ b/lib/screens/home/home_page.dart
+@@ -8,6 +8,7 @@ import 'package:nexmusic/core/utils/service_locator.dart';
+ import 'package:nexmusic/screens/home/cubit/home_cubit.dart';
+ import 'package:nexmusic/core/widgets/section_item.dart';
+ import 'package:nexmusic/utils/internet_guard.dart';
++import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
+ import 'package:nexmusic/core/widgets/shimmer/shimmer_host.dart';
+ import 'package:nexmusic/core/widgets/shimmer/shimmer_placeholders.dart';
+ import 'package:hive_flutter/hive_flutter.dart';
+diff --git a/test/widget_test.dart b/test/widget_test.dart
+index 6bad4d0..7e1465a 100644
+--- a/test/widget_test.dart
++++ b/test/widget_test.dart
+@@ -1,30 +1,18 @@
+-// This is a basic Flutter widget test.
+-//
+-// To perform an interaction with a widget in your test, use the WidgetTester
+-// utility in the flutter_test package. For example, you can send tap and scroll
+-// gestures. You can also use WidgetTester to find child widgets in the widget
+-// tree, read text, and verify that the values of widget properties are correct.
++// Basic smoke test: verifies the NexMusic app widget can be constructed
++// and mounted without throwing during the initial frame.
+ 
+-import 'package:flutter/material.dart';
+ import 'package:flutter_test/flutter_test.dart';
+ 
+ import 'package:nexmusic/main.dart';
+ 
+ void main() {
+-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+-    // Build our app and trigger a frame.
+-    await tester.pumpWidget(const Echo());
+-
+-    // Verify that our counter starts at 0.
+-    expect(find.text('0'), findsOneWidget);
+-    expect(find.text('1'), findsNothing);
+-
+-    // Tap the '+' icon and trigger a frame.
+-    await tester.tap(find.byIcon(Icons.add));
++  testWidgets('NexMusic app builds without throwing', (
++    WidgetTester tester,
++  ) async {
++    await tester.pumpWidget(const NexMusic());
+     await tester.pump();
+ 
+-    // Verify that our counter has incremented.
+-    expect(find.text('0'), findsNothing);
+-    expect(find.text('1'), findsOneWidget);
++    // If we got this far without an exception, the widget tree mounted.
++    expect(tester.takeException(), isNull);
+   });
+ }

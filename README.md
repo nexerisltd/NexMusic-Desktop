@@ -8,9 +8,9 @@
 
   <br/>
 
-  <a href="https://github.com/arabiislam46ar/NexMusic/releases/download/v1.0/NexMusic.exe" style="text-decoration: none;"><img src="assets/windows-button.png" alt="Download for Windows" width="170"/></a>&nbsp;
-  <a href="https://github.com/arabiislam46ar/NexMusic/releases/download/v1.0/NexMusic.dmg" style="text-decoration: none;"><img src="assets/mac-button.png" alt="Download for Mac" width="170"/></a>&nbsp;
-  <a href="https://github.com/arabiislam46ar/NexMusic#linux" style="text-decoration: none;"><img src="assets/linux-button.png" alt="Download for Linux" width="170"/></a>
+  <a href="https://github.com/nexerisltd/NexMusic-Desktop/releases/latest/download/NexMusic-Desktop-setup.exe" style="text-decoration: none;"><img src="assets/windows-button.png" alt="Download for Windows" width="170"/></a>&nbsp;
+  <a href="https://github.com/nexerisltd/NexMusic-Desktop/releases/latest/download/NexMusic-Desktop.dmg" style="text-decoration: none;"><img src="assets/mac-button.png" alt="Download for Mac" width="170"/></a>&nbsp;
+  <a href="https://github.com/nexerisltd/NexMusic-Desktop#linux" style="text-decoration: none;"><img src="assets/linux-button.png" alt="Download for Linux" width="170"/></a>
 </div>
 
 ---
@@ -48,18 +48,18 @@ NexMusic brings the premium listening experience to your computer. Built with Fl
 **Note** (All Platforms): Light Mode currently has layout rendering bugs. It is highly recommended to switch to Dark Mode, the fix is being worked on.
 
 ### Windows
-1. Download the latest `.exe` installer from the [Releases Page](https://github.com/arabiislam46ar/NexMusic/releases/latest).
+1. Download the latest `.exe` installer from the [Releases Page](https://github.com/nexerisltd/NexMusic-Desktop/releases/latest).
 2. Run the installer and follow the on-screen prompts.
 
 ### macOS
-1. Download the `.dmg` file from the [Releases Page](https://github.com/arabiislam46ar/NexMusic/releases/latest).
+1. Download the `.dmg` file from the [Releases Page](https://github.com/nexerisltd/NexMusic-Desktop/releases/latest).
 2. Open the disk image and drag NexMusic to your Applications folder.
 3. If you see a security warning, go to **System Settings → Privacy & Security** and allow the app.
 
 ### Linux
 NexMusic is available as an AppImage, DEB, and RPM package.
 
-1. Download the appropriate package from the [Releases Page](https://github.com/arabiislam46ar/NexMusic/releases/latest).
+1. Download the appropriate package from the [Releases Page](https://github.com/nexerisltd/NexMusic-Desktop/releases/latest).
 2. Run or install the downloaded file using the corresponding command below:
     - **AppImage** - Make it executable and run it:
        ```bash
@@ -80,7 +80,7 @@ Ensure Flutter is installed and configured for desktop development.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/arabiislam46ar/NexMusic.git
+   git clone https://github.com/nexerisltd/NexMusic-Desktop.git
    cd NexMusic
    ```
 
@@ -143,7 +143,7 @@ NexMusic is built with inspiration and help from these excellent open-source pro
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=arabiislam46ar/NexMusic&type=timeline&logscale&legend=top-left)](https://www.star-history.com/#arabiislam46ar/NexMusic&type=timeline&logscale&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=nexerisltd/NexMusic-Desktop&type=timeline&logscale&legend=top-left)](https://www.star-history.com/#nexerisltd/NexMusic-Desktop&type=timeline&logscale&legend=top-left)
 
 ---
 

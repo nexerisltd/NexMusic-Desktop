@@ -1,0 +1,283 @@
+diff --git a/lib/core/widgets/glass/liquid_glass_surface.dart b/lib/core/widgets/glass/liquid_glass_surface.dart
+new file mode 100644
+index 0000000..8b37554
+--- /dev/null
++++ b/lib/core/widgets/glass/liquid_glass_surface.dart
+@@ -0,0 +1,98 @@
++import 'dart:ui';
++
++import 'package:flutter/material.dart';
++
++/// A reusable "frosted glass" surface: blurs whatever sits behind it, tints
++/// it with a translucent colour, and adds a soft diagonal sheen plus a thin
++/// bright edge — the combination that reads as "glass" rather than just
++/// "blurred".
++///
++/// This is the Flutter/desktop counterpart to NexMusic-Android's
++/// `component/backdrop` system (Blur + Highlight + InnerShadow layered on a
++/// `RuntimeShader`). Flutter has no direct equivalent to Android's
++/// RenderEffect/RuntimeShader pipeline, so this recreates the same visual
++/// language — blur, tint, sheen, rim light — using standard [BackdropFilter]
++/// and layered gradients instead.
++///
++/// Wrap any panel that floats above album art or a blurred background with
++/// this widget: the queue drawer, the mini-player bar, bottom sheets, etc.
++class LiquidGlassSurface extends StatelessWidget {
++  final Widget child;
++  final BorderRadius borderRadius;
++  final double blurSigma;
++
++  /// Overall opacity of the tint colour laid over the blurred backdrop.
++  /// Lower = clearer glass, higher = more opaque/frosted.
++  final double tintOpacity;
++
++  /// Tint colour. Defaults to the current [ColorScheme.surface], so panels
++  /// automatically pick up the accent colour set in Appearance settings.
++  final Color? tintColor;
++
++  /// Whether to draw a thin bright rim around the edge, simulating light
++  /// catching the border of a glass pane. Turn off for surfaces that
++  /// already sit inside another bordered container.
++  final bool showEdgeHighlight;
++
++  const LiquidGlassSurface({
++    super.key,
++    required this.child,
++    this.borderRadius = const BorderRadius.all(Radius.circular(24)),
++    this.blurSigma = 24,
++    this.tintOpacity = 0.35,
++    this.tintColor,
++    this.showEdgeHighlight = true,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    final tint = tintColor ?? Theme.of(context).colorScheme.surface;
++
++    return ClipRRect(
++      borderRadius: borderRadius,
++      child: BackdropFilter(
++        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
++        child: Stack(
++          children: [
++            // Colour tint over the blurred backdrop.
++            Positioned.fill(
++              child: ColoredBox(color: tint.withValues(alpha: tintOpacity)),
++            ),
++            // Diagonal sheen: brighter near the top-left, fading to a
++            // faint shadow at the bottom-right — mimics light hitting a
++            // curved glass surface.
++            Positioned.fill(
++              child: DecoratedBox(
++                decoration: BoxDecoration(
++                  gradient: LinearGradient(
++                    begin: Alignment.topLeft,
++                    end: Alignment.bottomRight,
++                    colors: [
++                      Colors.white.withValues(alpha: 0.14),
++                      Colors.white.withValues(alpha: 0.0),
++                      Colors.black.withValues(alpha: 0.06),
++                    ],
++                    stops: const [0.0, 0.45, 1.0],
++                  ),
++                ),
++              ),
++            ),
++            if (showEdgeHighlight)
++              Positioned.fill(
++                child: DecoratedBox(
++                  decoration: BoxDecoration(
++                    borderRadius: borderRadius,
++                    border: Border.all(
++                      width: 1,
++                      color: Colors.white.withValues(alpha: 0.16),
++                    ),
++                  ),
++                ),
++              ),
++            child,
++          ],
++        ),
++      ),
++    );
++  }
++}
+diff --git a/lib/screens/player/widgets/queue_list.dart b/lib/screens/player/widgets/queue_list.dart
+index 26b3702..18b0746 100644
+--- a/lib/screens/player/widgets/queue_list.dart
++++ b/lib/screens/player/widgets/queue_list.dart
+@@ -1,5 +1,5 @@
+ import 'dart:io';
+-import 'dart:ui';
++import 'package:nexmusic/core/widgets/glass/liquid_glass_surface.dart';
+ import 'package:flutter/material.dart';
+ import 'package:get_it/get_it.dart';
+ import 'package:nexmusic/generated/l10n.dart';
+@@ -22,73 +22,69 @@ class QueueList extends StatelessWidget {
+         final sequence = snapshot.data?.sequence ?? [];
+         final currentIndex = snapshot.data?.currentIndex ?? 0;
+ 
+-        return Container(
+-          decoration: BoxDecoration(
+-            color: Theme.of(context).scaffoldBackgroundColor.withAlpha(70),
+-          ),
+-          child: ClipRRect(
+-            child: BackdropFilter(
+-              filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+-              child: SafeArea(
+-                top: false,
+-                child: Column(
+-                  children: [
+-                    Expanded(
+-                      child: ReorderableListView(
+-                        onReorder: (oldIndex, newIndex) async {
+-                          if (newIndex > oldIndex) newIndex -= 1;
+-                          await player.moveAudioSource(oldIndex, newIndex);
+-                        },
+-                        children: [
+-                          for (int i = 0; i < sequence.length; i++)
+-                            QueueTile(
+-                              key: Key(sequence[i].tag?.id ?? '$i'),
+-                              index: i,
+-                              isCurrent: i == currentIndex,
+-                              source: sequence[i],
+-                            ),
+-                        ],
+-                      ),
+-                    ),
+-                    if (Platform.isAndroid)
+-                      StreamBuilder<bool>(
+-                        stream: player.shuffleModeEnabledStream,
+-                        builder: (context, snapshot) {
+-                          final shuffle = snapshot.data ?? false;
+-                          return Padding(
+-                            padding:
+-                                const EdgeInsets.symmetric(horizontal: 16.0),
+-                            child: Row(
+-                              mainAxisAlignment: MainAxisAlignment.end,
+-                              children: [
+-                                TextButton.icon(
+-                                  style: ButtonStyle(
+-                                    backgroundColor: WidgetStatePropertyAll(
+-                                      shuffle
+-                                          ? Colors.white
+-                                          : Colors.white.withAlpha(50),
+-                                    ),
+-                                    foregroundColor: WidgetStatePropertyAll(
+-                                      shuffle
+-                                          ? Theme.of(context)
+-                                              .scaffoldBackgroundColor
+-                                          : Colors.white,
+-                                    ),
+-                                  ),
+-                                  onPressed: () {
+-                                    player.setShuffleModeEnabled(!shuffle);
+-                                  },
+-                                  icon: const Icon(Icons.shuffle_outlined),
+-                                  label: Text(S.of(context).Shuffle),
++        return LiquidGlassSurface(
++          borderRadius: BorderRadius.zero,
++          blurSigma: 20,
++          tintOpacity: 0.55,
++          tintColor: Theme.of(context).scaffoldBackgroundColor,
++          child: SafeArea(
++            top: false,
++            child: Column(
++              children: [
++                Expanded(
++                  child: ReorderableListView(
++                    onReorder: (oldIndex, newIndex) async {
++                      if (newIndex > oldIndex) newIndex -= 1;
++                      await player.moveAudioSource(oldIndex, newIndex);
++                    },
++                    children: [
++                      for (int i = 0; i < sequence.length; i++)
++                        QueueTile(
++                          key: Key(sequence[i].tag?.id ?? '$i'),
++                          index: i,
++                          isCurrent: i == currentIndex,
++                          source: sequence[i],
++                        ),
++                    ],
++                  ),
++                ),
++                if (Platform.isAndroid)
++                  StreamBuilder<bool>(
++                    stream: player.shuffleModeEnabledStream,
++                    builder: (context, snapshot) {
++                      final shuffle = snapshot.data ?? false;
++                      return Padding(
++                        padding:
++                            const EdgeInsets.symmetric(horizontal: 16.0),
++                        child: Row(
++                          mainAxisAlignment: MainAxisAlignment.end,
++                          children: [
++                            TextButton.icon(
++                              style: ButtonStyle(
++                                backgroundColor: WidgetStatePropertyAll(
++                                  shuffle
++                                      ? Colors.white
++                                      : Colors.white.withAlpha(50),
+                                 ),
+-                              ],
++                                foregroundColor: WidgetStatePropertyAll(
++                                  shuffle
++                                      ? Theme.of(context)
++                                          .scaffoldBackgroundColor
++                                      : Colors.white,
++                                ),
++                              ),
++                              onPressed: () {
++                                player.setShuffleModeEnabled(!shuffle);
++                              },
++                              icon: const Icon(Icons.shuffle_outlined),
++                              label: Text(S.of(context).Shuffle),
+                             ),
+-                          );
+-                        },
+-                      ),
+-                  ],
+-                ),
+-              ),
++                          ],
++                        ),
++                      );
++                    },
++                  ),
++              ],
+             ),
+           ),
+         );
+diff --git a/lib/screens/shell/widgets/bottom_player.dart b/lib/screens/shell/widgets/bottom_player.dart
+index 5f7b2a3..f803d56 100644
+--- a/lib/screens/shell/widgets/bottom_player.dart
++++ b/lib/screens/shell/widgets/bottom_player.dart
+@@ -11,6 +11,7 @@ import 'package:nexmusic/utils/song_thumbnail.dart';
+ import 'package:provider/provider.dart';
+ import 'dart:ui' as ui;
+ import 'package:nexmusic/utils/bottom_modals.dart';
++import 'package:nexmusic/core/widgets/glass/liquid_glass_surface.dart';
+ 
+ class BottomPlayer extends StatefulWidget {
+   const BottomPlayer({super.key});
+@@ -62,7 +63,6 @@ class _BottomPlayerState extends State<BottomPlayer> {
+               child: Container(
+                 margin: const EdgeInsets.only(bottom: 10),
+                 decoration: BoxDecoration(
+-                  color: (backgroundColor ?? const Color(0xFF202020)).withAlpha(255),
+                   borderRadius: BorderRadius.circular(50),
+                   boxShadow: [
+                     BoxShadow(
+@@ -73,8 +73,11 @@ class _BottomPlayerState extends State<BottomPlayer> {
+                     ),
+                   ],
+                 ),
+-                child: ClipRRect(
++                child: LiquidGlassSurface(
+                   borderRadius: BorderRadius.circular(50),
++                  blurSigma: 18,
++                  tintOpacity: 0.55,
++                  tintColor: backgroundColor ?? const Color(0xFF202020),
+                   child: Padding(
+                       padding: const EdgeInsets.symmetric(
+                           horizontal: 12, vertical: 4), // Reduced padding

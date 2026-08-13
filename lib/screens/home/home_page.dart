@@ -9,6 +9,8 @@ import 'package:nexmusic/screens/home/cubit/home_cubit.dart';
 import 'package:nexmusic/core/widgets/section_item.dart';
 import 'package:nexmusic/utils/internet_guard.dart';
 import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
+import 'package:nexmusic/core/widgets/shimmer/shimmer_host.dart';
+import 'package:nexmusic/core/widgets/shimmer/shimmer_placeholders.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -164,8 +166,29 @@ class _HomePageState extends State<_HomePage> {
             builder: (context, state) {
               switch (state) {
                 case HomeLoading():
-                  return Center(
-                    child: LoadingIndicatorM3E(),
+                  return ShimmerHost(
+                    child: SafeArea(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: List.generate(
+                          4,
+                          (i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                                  child: TextPlaceholder(height: 20),
+                                ),
+                                ShimmerCarouselRow(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   );
                 case HomeError():
                   return Center(
@@ -189,8 +212,8 @@ class _HomePageState extends State<_HomePage> {
                                 state.continuation != null)
                               const SizedBox(height: 50),
                             if (state.loadingMore)
-                              const Padding(
-                                  padding: EdgeInsets.all(8.0),
+                              Padding(
+                                  padding: const EdgeInsets.all(8.0),
                                   child: ExpressiveLoadingIndicator()),
                           ],
                         ),

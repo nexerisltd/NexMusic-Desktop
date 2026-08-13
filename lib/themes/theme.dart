@@ -3,12 +3,16 @@ import 'package:flutter/services.dart';
 
 import 'typography.dart';
 
+/// Fallback accent color used when the user hasn't picked one yet.
+/// Matches the default seed color used on NexMusic-Android.
+const Color defaultThemeColor = Color(0xFFED5564);
+
 class AppTheme {
-  static ThemeData light({Color? primary}) {
+  static ThemeData light({Color? primary, bool amoledBlack = false}) {
     final colorScheme = ColorScheme.fromSeed(
-            seedColor: primary??Colors.red,
-            brightness: Brightness.light,
-          );
+      seedColor: primary ?? defaultThemeColor,
+      brightness: Brightness.light,
+    );
 
     return ThemeData.light(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: colorScheme.surface,
@@ -25,13 +29,16 @@ class AppTheme {
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: Colors.transparent,
-        unselectedIconTheme: const IconThemeData(color: Colors.black),
-        selectedIconTheme: const IconThemeData(color: Colors.white),
-        indicatorColor: Colors.black,
+        unselectedIconTheme: IconThemeData(color: colorScheme.onSurface),
+        selectedIconTheme: IconThemeData(color: colorScheme.onPrimary),
+        indicatorColor: colorScheme.primary,
         labelType: NavigationRailLabelType.all,
-        selectedLabelTextStyle: const TextStyle(color: Colors.black, fontSize: 11),
-        unselectedLabelTextStyle:
-            TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 11),
+        selectedLabelTextStyle:
+            TextStyle(color: colorScheme.primary, fontSize: 11),
+        unselectedLabelTextStyle: TextStyle(
+          color: colorScheme.onSurface.withValues(alpha: 0.6),
+          fontSize: 11,
+        ),
       ),
       pageTransitionsTheme: PageTransitionsTheme(
         builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
@@ -42,17 +49,25 @@ class AppTheme {
     );
   }
 
-  static ThemeData dark({Color? primary}) {
-    final colorScheme = ColorScheme.dark(
-      primary: Colors.white,
-      onPrimary: Colors.black,
-      secondary: Colors.white,
-      onSecondary: Colors.black,
-      surface: Colors.black,
-      onSurface: Colors.white,
-      error: Colors.red,
-      onError: Colors.white,
+  static ThemeData dark({Color? primary, bool amoledBlack = false}) {
+    var colorScheme = ColorScheme.fromSeed(
+      seedColor: primary ?? defaultThemeColor,
+      brightness: Brightness.dark,
     );
+
+    // AMOLED Black: pin surface/background to true black for OLED panels,
+    // mirroring `ColorScheme.pureBlack()` on NexMusic-Android.
+    if (amoledBlack) {
+      colorScheme = colorScheme.copyWith(
+        surface: Colors.black,
+        surfaceContainerLowest: Colors.black,
+        surfaceContainerLow: const Color(0xFF0A0A0A),
+        surfaceContainer: const Color(0xFF0D0D0D),
+        surfaceContainerHigh: const Color(0xFF141414),
+        surfaceContainerHighest: const Color(0xFF1A1A1A),
+      );
+    }
+
     return ThemeData.dark(useMaterial3: true).copyWith(
       scaffoldBackgroundColor: Colors.transparent,
       textTheme: appTextTheme(ThemeData.dark().textTheme),
@@ -73,13 +88,19 @@ class AppTheme {
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: Colors.transparent,
-        unselectedIconTheme: const IconThemeData(color: Colors.white),
-        selectedIconTheme: const IconThemeData(color: Colors.black),
-        indicatorColor: Colors.white,
+        unselectedIconTheme: IconThemeData(color: colorScheme.onSurface),
+        selectedIconTheme: IconThemeData(color: colorScheme.onPrimary),
+        indicatorColor: colorScheme.primary,
         labelType: NavigationRailLabelType.all,
-        selectedLabelTextStyle: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
-        unselectedLabelTextStyle:
-            TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
+        selectedLabelTextStyle: TextStyle(
+          color: colorScheme.primary,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          color: colorScheme.onSurface.withValues(alpha: 0.6),
+          fontSize: 11,
+        ),
       ),
       pageTransitionsTheme: PageTransitionsTheme(
         builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(

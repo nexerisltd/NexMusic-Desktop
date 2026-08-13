@@ -1,5 +1,5 @@
 #define AppName "NexMusic"
-#define AppVersion "4.0.5"
+#define AppVersion "5.2.89"
 #define AppPublisher "NexApp"
 #define AppExeName "nexmusic.exe"
 

@@ -1,0 +1,459 @@
+diff --git a/lib/core/widgets/shimmer/shimmer_host.dart b/lib/core/widgets/shimmer/shimmer_host.dart
+new file mode 100644
+index 0000000..7f53135
+--- /dev/null
++++ b/lib/core/widgets/shimmer/shimmer_host.dart
+@@ -0,0 +1,118 @@
++import 'package:flutter/material.dart';
++
++/// Wraps a subtree that should display shimmering loading placeholders.
++///
++/// Mirrors NexMusic-Android's `ShimmerHost` (built on the `valentinilk/shimmer`
++/// library): a single looping sweep animation is shared by every descendant
++/// placeholder so all skeletons pulse in sync, instead of each one running
++/// its own independent (and visually noisy) animation.
++class ShimmerHost extends StatefulWidget {
++  final Widget child;
++
++  const ShimmerHost({super.key, required this.child});
++
++  @override
++  State<ShimmerHost> createState() => _ShimmerHostState();
++}
++
++class _ShimmerHostState extends State<ShimmerHost>
++    with SingleTickerProviderStateMixin {
++  late final AnimationController _controller;
++
++  @override
++  void initState() {
++    super.initState();
++    // 800ms sweep + 250ms pause, restarting from the start each loop —
++    // matches the timing used on NexMusic-Android's shimmer theme.
++    _controller = AnimationController(
++      vsync: this,
++      duration: const Duration(milliseconds: 1050),
++    )..repeat();
++  }
++
++  @override
++  void dispose() {
++    _controller.dispose();
++    super.dispose();
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return _ShimmerScope(controller: _controller, child: widget.child);
++  }
++}
++
++class _ShimmerScope extends InheritedWidget {
++  final AnimationController controller;
++
++  const _ShimmerScope({required this.controller, required super.child});
++
++  static AnimationController? of(BuildContext context) {
++    return context
++        .dependOnInheritedWidgetOfExactType<_ShimmerScope>()
++        ?.controller;
++  }
++
++  @override
++  bool updateShouldNotify(_ShimmerScope oldWidget) =>
++      controller != oldWidget.controller;
++}
++
++/// The base skeleton block every placeholder is built from. Paints a soft
++/// surface-tint gradient that sweeps left-to-right in sync with the nearest
++/// [ShimmerHost]. Falls back to a static tint if no [ShimmerHost] is found
++/// above it in the tree, so it never throws if used standalone.
++class ShimmerBlock extends StatelessWidget {
++  final double? width;
++  final double height;
++  final BorderRadius borderRadius;
++
++  const ShimmerBlock({
++    super.key,
++    this.width,
++    required this.height,
++    this.borderRadius = const BorderRadius.all(Radius.circular(4)),
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
++    final controller = _ShimmerScope.of(context);
++
++    if (controller == null) {
++      return Container(
++        width: width,
++        height: height,
++        decoration: BoxDecoration(
++          color: base.withValues(alpha: 0.35),
++          borderRadius: borderRadius,
++        ),
++      );
++    }
++
++    return AnimatedBuilder(
++      animation: controller,
++      builder: (context, _) {
++        // Sweep the highlight band from off-screen left to off-screen right.
++        final sweep = -1.6 + controller.value * 3.2;
++        return Container(
++          width: width,
++          height: height,
++          decoration: BoxDecoration(
++            borderRadius: borderRadius,
++            gradient: LinearGradient(
++              begin: Alignment(-1 + sweep, 0),
++              end: Alignment(1 + sweep, 0),
++              colors: [
++                base.withValues(alpha: 0.25),
++                base.withValues(alpha: 0.55),
++                base.withValues(alpha: 0.25),
++              ],
++              stops: const [0.35, 0.5, 0.65],
++            ),
++          ),
++        );
++      },
++    );
++  }
++}
+diff --git a/lib/core/widgets/shimmer/shimmer_placeholders.dart b/lib/core/widgets/shimmer/shimmer_placeholders.dart
+new file mode 100644
+index 0000000..c46adb9
+--- /dev/null
++++ b/lib/core/widgets/shimmer/shimmer_placeholders.dart
+@@ -0,0 +1,155 @@
++import 'dart:math';
++
++import 'package:flutter/material.dart';
++
++import 'shimmer_host.dart';
++
++/// A single skeleton "line of text". Width is randomised once per instance
++/// (25%–75% of the available width) so a block of these doesn't look like a
++/// perfectly uniform grid — mirrors NexMusic-Android's `TextPlaceholder`.
++class TextPlaceholder extends StatefulWidget {
++  final double height;
++  final BorderRadius borderRadius;
++
++  const TextPlaceholder({
++    super.key,
++    this.height = 16,
++    this.borderRadius = const BorderRadius.all(Radius.circular(4)),
++  });
++
++  @override
++  State<TextPlaceholder> createState() => _TextPlaceholderState();
++}
++
++class _TextPlaceholderState extends State<TextPlaceholder> {
++  late final double _widthFraction =
++      0.25 + Random().nextDouble() * 0.5;
++
++  @override
++  Widget build(BuildContext context) {
++    return Padding(
++      padding: const EdgeInsets.symmetric(vertical: 4),
++      child: FractionallySizedBox(
++        alignment: Alignment.centerLeft,
++        widthFactor: _widthFraction,
++        child: ShimmerBlock(
++          height: widget.height,
++          borderRadius: widget.borderRadius,
++        ),
++      ),
++    );
++  }
++}
++
++/// Skeleton row matching a `ListTile`-style song/playlist row: a square
++/// thumbnail on the left, title + subtitle placeholder lines on the right.
++class ListItemPlaceholder extends StatelessWidget {
++  final double thumbnailSize;
++  final double itemHeight;
++
++  const ListItemPlaceholder({
++    super.key,
++    this.thumbnailSize = 48,
++    this.itemHeight = 64,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    return SizedBox(
++      height: itemHeight,
++      child: Padding(
++        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
++        child: Row(
++          children: [
++            ShimmerBlock(
++              width: thumbnailSize,
++              height: thumbnailSize,
++              borderRadius: BorderRadius.circular(8),
++            ),
++            const SizedBox(width: 12),
++            Expanded(
++              child: Column(
++                mainAxisAlignment: MainAxisAlignment.center,
++                crossAxisAlignment: CrossAxisAlignment.start,
++                children: const [
++                  TextPlaceholder(),
++                  TextPlaceholder(height: 12),
++                ],
++              ),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++/// Skeleton tile matching an album/playlist grid card: a square artwork
++/// placeholder with two text lines underneath.
++class GridItemPlaceholder extends StatelessWidget {
++  final double size;
++
++  const GridItemPlaceholder({super.key, this.size = 150});
++
++  @override
++  Widget build(BuildContext context) {
++    return Padding(
++      padding: const EdgeInsets.all(8),
++      child: SizedBox(
++        width: size,
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            ShimmerBlock(
++              width: size,
++              height: size,
++              borderRadius: BorderRadius.circular(8),
++            ),
++            const SizedBox(height: 6),
++            const TextPlaceholder(),
++            const TextPlaceholder(height: 12),
++          ],
++        ),
++      ),
++    );
++  }
++}
++
++/// Skeleton for a pill-shaped button or chip.
++class ButtonPlaceholder extends StatelessWidget {
++  final double width;
++  final double height;
++
++  const ButtonPlaceholder({super.key, this.width = 90, this.height = 36});
++
++  @override
++  Widget build(BuildContext context) {
++    return ShimmerBlock(
++      width: width,
++      height: height,
++      borderRadius: BorderRadius.circular(height / 2),
++    );
++  }
++}
++
++/// A horizontally-scrolling row of [GridItemPlaceholder]s, useful for
++/// mimicking a home-screen carousel section while it loads.
++class ShimmerCarouselRow extends StatelessWidget {
++  final int count;
++  final double itemSize;
++
++  const ShimmerCarouselRow({super.key, this.count = 6, this.itemSize = 150});
++
++  @override
++  Widget build(BuildContext context) {
++    return SizedBox(
++      height: itemSize + 60,
++      child: ListView.builder(
++        scrollDirection: Axis.horizontal,
++        physics: const NeverScrollableScrollPhysics(),
++        itemCount: count,
++        itemBuilder: (context, index) => GridItemPlaceholder(size: itemSize),
++      ),
++    );
++  }
++}
+diff --git a/lib/main.dart b/lib/main.dart
+index d69f047..c599419 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -166,10 +166,11 @@ class NexMusic extends StatelessWidget {
+           debugShowCheckedModeBanner: false,
+           themeMode: context.watch<SettingsManager>().themeMode,
+           theme: AppTheme.light(
+-            primary: Colors.black,
++            primary: context.watch<SettingsManager>().accentColor,
+           ),
+           darkTheme: AppTheme.dark(
+-            primary: Colors.white,
++            primary: context.watch<SettingsManager>().accentColor,
++            amoledBlack: context.watch<SettingsManager>().amoledBlack,
+           ),
+         ),
+       ),
+diff --git a/lib/screens/home/home_page.dart b/lib/screens/home/home_page.dart
+index cfa769e..7acbed0 100644
+--- a/lib/screens/home/home_page.dart
++++ b/lib/screens/home/home_page.dart
+@@ -8,7 +8,8 @@ import 'package:nexmusic/core/utils/service_locator.dart';
+ import 'package:nexmusic/screens/home/cubit/home_cubit.dart';
+ import 'package:nexmusic/core/widgets/section_item.dart';
+ import 'package:nexmusic/utils/internet_guard.dart';
+-import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
++import 'package:nexmusic/core/widgets/shimmer/shimmer_host.dart';
++import 'package:nexmusic/core/widgets/shimmer/shimmer_placeholders.dart';
+ import 'package:hive_flutter/hive_flutter.dart';
+ import 'package:url_launcher/url_launcher.dart';
+ 
+@@ -164,8 +165,29 @@ class _HomePageState extends State<_HomePage> {
+             builder: (context, state) {
+               switch (state) {
+                 case HomeLoading():
+-                  return Center(
+-                    child: LoadingIndicatorM3E(),
++                  return ShimmerHost(
++                    child: SafeArea(
++                      child: ListView(
++                        padding: const EdgeInsets.symmetric(vertical: 8),
++                        physics: const NeverScrollableScrollPhysics(),
++                        children: List.generate(
++                          4,
++                          (i) => Padding(
++                            padding: const EdgeInsets.only(bottom: 8),
++                            child: Column(
++                              crossAxisAlignment: CrossAxisAlignment.start,
++                              children: [
++                                const Padding(
++                                  padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
++                                  child: TextPlaceholder(height: 20),
++                                ),
++                                const ShimmerCarouselRow(),
++                              ],
++                            ),
++                          ),
++                        ),
++                      ),
++                    ),
+                   );
+                 case HomeError():
+                   return Center(
+diff --git a/lib/themes/theme.dart b/lib/themes/theme.dart
+index b1c8a5e..da26358 100644
+--- a/lib/themes/theme.dart
++++ b/lib/themes/theme.dart
+@@ -3,12 +3,16 @@ import 'package:flutter/services.dart';
+ 
+ import 'typography.dart';
+ 
++/// Fallback accent color used when the user hasn't picked one yet.
++/// Matches the default seed color used on NexMusic-Android.
++const Color defaultThemeColor = Color(0xFFED5564);
++
+ class AppTheme {
+-  static ThemeData light({Color? primary}) {
++  static ThemeData light({Color? primary, bool amoledBlack = false}) {
+     final colorScheme = ColorScheme.fromSeed(
+-            seedColor: primary??Colors.red,
+-            brightness: Brightness.light,
+-          );
++      seedColor: primary ?? defaultThemeColor,
++      brightness: Brightness.light,
++    );
+ 
+     return ThemeData.light(useMaterial3: true).copyWith(
+       scaffoldBackgroundColor: colorScheme.surface,
+@@ -25,13 +29,16 @@ class AppTheme {
+       ),
+       navigationRailTheme: NavigationRailThemeData(
+         backgroundColor: Colors.transparent,
+-        unselectedIconTheme: const IconThemeData(color: Colors.black),
+-        selectedIconTheme: const IconThemeData(color: Colors.white),
+-        indicatorColor: Colors.black,
++        unselectedIconTheme: IconThemeData(color: colorScheme.onSurface),
++        selectedIconTheme: IconThemeData(color: colorScheme.onPrimary),
++        indicatorColor: colorScheme.primary,
+         labelType: NavigationRailLabelType.all,
+-        selectedLabelTextStyle: const TextStyle(color: Colors.black, fontSize: 11),
+-        unselectedLabelTextStyle:
+-            TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 11),
++        selectedLabelTextStyle:
++            TextStyle(color: colorScheme.primary, fontSize: 11),
++        unselectedLabelTextStyle: TextStyle(
++          color: colorScheme.onSurface.withValues(alpha: 0.6),
++          fontSize: 11,
++        ),
+       ),
+       pageTransitionsTheme: PageTransitionsTheme(
+         builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+@@ -42,17 +49,25 @@ class AppTheme {
+     );
+   }
+ 
+-  static ThemeData dark({Color? primary}) {
+-    final colorScheme = ColorScheme.dark(
+-      primary: Colors.white,
+-      onPrimary: Colors.black,
+-      secondary: Colors.white,
+-      onSecondary: Colors.black,
+-      surface: Colors.black,
+-      onSurface: Colors.white,
+-      error: Colors.red,
+-      onError: Colors.white,
++  static ThemeData dark({Color? primary, bool amoledBlack = false}) {
++    var colorScheme = ColorScheme.fromSeed(
++      seedColor: primary ?? defaultThemeColor,
++      brightness: Brightness.dark,
+     );
++
++    // AMOLED Black: pin surface/background to true black for OLED panels,
++    // mirroring `ColorScheme.pureBlack()` on NexMusic-Android.
++    if (amoledBlack) {
++      colorScheme = colorScheme.copyWith(
++        surface: Colors.black,
++        surfaceContainerLowest: Colors.black,
++        surfaceContainerLow: const Color(0xFF0A0A0A),
++        surfaceContainer: const Color(0xFF0D0D0D),
++        surfaceContainerHigh: const Color(0xFF141414),
++        surfaceContainerHighest: const Color(0xFF1A1A1A),
++      );
++    }
++
+     return ThemeData.dark(useMaterial3: true).copyWith(
+       scaffoldBackgroundColor: Colors.transparent,
+       textTheme: appTextTheme(ThemeData.dark().textTheme),
+@@ -73,13 +88,19 @@ class AppTheme {
+       ),
+       navigationRailTheme: NavigationRailThemeData(
+         backgroundColor: Colors.transparent,
+-        unselectedIconTheme: const IconThemeData(color: Colors.white),
+-        selectedIconTheme: const IconThemeData(color: Colors.black),
+-        indicatorColor: Colors.white,
++        unselectedIconTheme: IconThemeData(color: colorScheme.onSurface),
++        selectedIconTheme: IconThemeData(color: colorScheme.onPrimary),
++        indicatorColor: colorScheme.primary,
+         labelType: NavigationRailLabelType.all,
+-        selectedLabelTextStyle: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
+-        unselectedLabelTextStyle:
+-            TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
++        selectedLabelTextStyle: TextStyle(
++          color: colorScheme.primary,
++          fontSize: 11,
++          fontWeight: FontWeight.bold,
++        ),
++        unselectedLabelTextStyle: TextStyle(
++          color: colorScheme.onSurface.withValues(alpha: 0.6),
++          fontSize: 11,
++        ),
+       ),
+       pageTransitionsTheme: PageTransitionsTheme(
+         builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(

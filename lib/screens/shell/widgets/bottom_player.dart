@@ -11,6 +11,7 @@ import 'package:nexmusic/utils/song_thumbnail.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui' as ui;
 import 'package:nexmusic/utils/bottom_modals.dart';
+import 'package:nexmusic/core/widgets/glass/liquid_glass_surface.dart';
 
 class BottomPlayer extends StatefulWidget {
   const BottomPlayer({super.key});
@@ -62,7 +63,6 @@ class _BottomPlayerState extends State<BottomPlayer> {
               child: Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 decoration: BoxDecoration(
-                  color: (backgroundColor ?? const Color(0xFF202020)).withAlpha(255),
                   borderRadius: BorderRadius.circular(50),
                   boxShadow: [
                     BoxShadow(
@@ -73,8 +73,11 @@ class _BottomPlayerState extends State<BottomPlayer> {
                     ),
                   ],
                 ),
-                child: ClipRRect(
+                child: LiquidGlassSurface(
                   borderRadius: BorderRadius.circular(50),
+                  blurSigma: 18,
+                  tintOpacity: 0.55,
+                  tintColor: backgroundColor ?? const Color(0xFF202020),
                   child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 4), // Reduced padding

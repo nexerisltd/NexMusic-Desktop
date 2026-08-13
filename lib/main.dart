@@ -166,10 +166,11 @@ class NexMusic extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           themeMode: context.watch<SettingsManager>().themeMode,
           theme: AppTheme.light(
-            primary: Colors.black,
+            primary: context.watch<SettingsManager>().accentColor,
           ),
           darkTheme: AppTheme.dark(
-            primary: Colors.white,
+            primary: context.watch<SettingsManager>().accentColor,
+            amoledBlack: context.watch<SettingsManager>().amoledBlack,
           ),
         ),
       ),

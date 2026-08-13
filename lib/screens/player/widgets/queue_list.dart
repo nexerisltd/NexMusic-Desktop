@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:ui';
+import 'package:nexmusic/core/widgets/glass/liquid_glass_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:nexmusic/generated/l10n.dart';
@@ -22,73 +22,69 @@ class QueueList extends StatelessWidget {
         final sequence = snapshot.data?.sequence ?? [];
         final currentIndex = snapshot.data?.currentIndex ?? 0;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor.withAlpha(70),
-          ),
-          child: ClipRRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: ReorderableListView(
-                        onReorder: (oldIndex, newIndex) async {
-                          if (newIndex > oldIndex) newIndex -= 1;
-                          await player.moveAudioSource(oldIndex, newIndex);
-                        },
-                        children: [
-                          for (int i = 0; i < sequence.length; i++)
-                            QueueTile(
-                              key: Key(sequence[i].tag?.id ?? '$i'),
-                              index: i,
-                              isCurrent: i == currentIndex,
-                              source: sequence[i],
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (Platform.isAndroid)
-                      StreamBuilder<bool>(
-                        stream: player.shuffleModeEnabledStream,
-                        builder: (context, snapshot) {
-                          final shuffle = snapshot.data ?? false;
-                          return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                TextButton.icon(
-                                  style: ButtonStyle(
-                                    backgroundColor: WidgetStatePropertyAll(
-                                      shuffle
-                                          ? Colors.white
-                                          : Colors.white.withAlpha(50),
-                                    ),
-                                    foregroundColor: WidgetStatePropertyAll(
-                                      shuffle
-                                          ? Theme.of(context)
-                                              .scaffoldBackgroundColor
-                                          : Colors.white,
-                                    ),
-                                  ),
-                                  onPressed: () {
-                                    player.setShuffleModeEnabled(!shuffle);
-                                  },
-                                  icon: const Icon(Icons.shuffle_outlined),
-                                  label: Text(S.of(context).Shuffle),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                  ],
+        return LiquidGlassSurface(
+          borderRadius: BorderRadius.zero,
+          blurSigma: 20,
+          tintOpacity: 0.55,
+          tintColor: Theme.of(context).scaffoldBackgroundColor,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Expanded(
+                  child: ReorderableListView(
+                    onReorder: (oldIndex, newIndex) async {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      await player.moveAudioSource(oldIndex, newIndex);
+                    },
+                    children: [
+                      for (int i = 0; i < sequence.length; i++)
+                        QueueTile(
+                          key: Key(sequence[i].tag?.id ?? '$i'),
+                          index: i,
+                          isCurrent: i == currentIndex,
+                          source: sequence[i],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                if (Platform.isAndroid)
+                  StreamBuilder<bool>(
+                    stream: player.shuffleModeEnabledStream,
+                    builder: (context, snapshot) {
+                      final shuffle = snapshot.data ?? false;
+                      return Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton.icon(
+                              style: ButtonStyle(
+                                backgroundColor: WidgetStatePropertyAll(
+                                  shuffle
+                                      ? Colors.white
+                                      : Colors.white.withAlpha(50),
+                                ),
+                                foregroundColor: WidgetStatePropertyAll(
+                                  shuffle
+                                      ? Theme.of(context)
+                                          .scaffoldBackgroundColor
+                                      : Colors.white,
+                                ),
+                              ),
+                              onPressed: () {
+                                player.setShuffleModeEnabled(!shuffle);
+                              },
+                              icon: const Icon(Icons.shuffle_outlined),
+                              label: Text(S.of(context).Shuffle),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+              ],
             ),
           ),
         );
