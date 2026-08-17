@@ -4,6 +4,32 @@ import '../helpers.dart';
 import 'utils.dart';
 
 mixin LibraryMixin on YTClient {
+  /// Rates a song ("thumbs up"/"thumbs down" on YouTube Music).
+  /// [rating] is one of 'LIKE', 'DISLIKE', 'INDIFFERENT' — 'INDIFFERENT'
+  /// removes any existing rating (used when un-liking a song locally, so
+  /// the like doesn't linger on the YT Music account).
+  ///
+  /// Silently returns null on failure (e.g. not signed in, or offline) —
+  /// this mirrors the Android app's behaviour of syncing likes best-effort
+  /// without blocking or erroring the local favourite toggle.
+  Future<Map?> rateSong(String videoId, {String rating = 'INDIFFERENT'}) async {
+    const endpoints = {
+      'LIKE': 'like/like',
+      'DISLIKE': 'like/dislike',
+      'INDIFFERENT': 'like/removelike',
+    };
+    final endpoint = endpoints[rating];
+    if (endpoint == null) return null;
+
+    try {
+      return await sendRequest(endpoint, {
+        'target': {'videoId': videoId},
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<Map> getLibrarySongs({String? continuationParams}) async {
     Map<String, dynamic> body = {'browseId': 'FEmusic_liked_videos'};
 

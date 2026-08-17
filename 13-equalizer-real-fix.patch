@@ -1,0 +1,1141 @@
+diff --git a/lib/services/desktop_equalizer.dart b/lib/services/desktop_equalizer.dart
+index a5fb9f5..61d8327 100644
+--- a/lib/services/desktop_equalizer.dart
++++ b/lib/services/desktop_equalizer.dart
+@@ -1,14 +1,18 @@
+ import 'package:just_audio/just_audio.dart';
++import 'package:just_audio_media_kit/just_audio_media_kit.dart';
++import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
++
+ import 'equalizer_backend.dart';
+ 
+ /// 10-band ISO graphic equalizer for Windows/Linux/macOS, implemented by
+ /// setting mpv's `af` (audio filter) property through media_kit's
+-/// underlying native player. just_audio_media_kit exposes the raw
+-/// media_kit Player for a given AudioPlayer via `JustAudioMediaKit.player`.
++/// underlying native player.
+ ///
+-/// NOTE: if your installed just_audio_media_kit version doesn't expose
+-/// `player(playerId)` under that exact name, check its README — the mpv
+-/// property call itself (`setProperty('af', ...)`) is the stable part.
++/// Reaching that underlying player requires two small local additions to
++/// the vendored `packages/just_audio_media_kit` copy — see that package's
++/// CHANGELOG.md for exactly what was added and why (upstream keeps its
++/// player registry entirely private, which is what kept this equalizer
++/// from ever applying a real audio effect before).
+ class DesktopEqualizer implements EqualizerBackend {
+   final AudioPlayer audioPlayer;
+   bool _enabled = false;
+@@ -43,8 +47,29 @@ class DesktopEqualizer implements EqualizerBackend {
+     if (_enabled) await _apply();
+   }
+ 
++  /// Builds an ffmpeg/mpv `equalizer` filter chain from the current band
++  /// gains. Bands left at 0dB are skipped entirely rather than included
++  /// as a no-op peaking filter, keeping the chain short when only a few
++  /// bands are adjusted.
++  String _buildFilterChain() {
++    final segments = <String>[
++      for (final band in _bands)
++        if (band.gain != 0)
++          'equalizer=f=${band.centerFrequency.round()}'
++          ':width_type=o:width=1'
++          ':g=${band.gain.toStringAsFixed(2)}',
++    ];
++    return segments.join(',');
++  }
++
+   Future<void> _apply() async {
+-    // just_audio_media_kit 2.x no longer exposes its underlying media_kit
+-    // player. Keep EQ state in the UI until a supported public API is added.
++    final platform = JustAudioPlatform.instance;
++    if (platform is! JustAudioMediaKit) return;
++
++    final player = platform.currentPlayer;
++    if (player == null) return;
++
++    final chain = _enabled ? _buildFilterChain() : '';
++    await player.setMpvProperty('af', chain);
+   }
+ }
+diff --git a/lib/services/media_player.dart b/lib/services/media_player.dart
+index 031f9ba..072198c 100644
+--- a/lib/services/media_player.dart
++++ b/lib/services/media_player.dart
+@@ -155,24 +155,48 @@ class MediaPlayer extends ChangeNotifier {
+   }
+ 
+   Future<void> _loadEqualizer() async {
+-    if (!Platform.isAndroid || _equalizer == null) return;
+-    await _equalizer!.setEnabled(GetIt.I<SettingsManager>().equalizerEnabled);
+-    _equalizer!.parameters.then((value) async {
+-      _equalizerParams ??= value;
+-      final List<AndroidEqualizerBand> bands = _equalizerParams!.bands;
+-      if (GetIt.I<SettingsManager>().equalizerBandsGain.isEmpty) {
+-        GetIt.I<SettingsManager>().equalizerBandsGain =
+-            List.generate(bands.length, (index) => 0.0);
+-      }
+-
+-      List<double> equalizerBandsGain =
+-          GetIt.I<SettingsManager>().equalizerBandsGain;
+-      for (var e in bands) {
+-        final gain =
+-            equalizerBandsGain.isNotEmpty ? equalizerBandsGain[e.index] : 0.0;
+-        _equalizerParams!.bands[e.index].setGain(gain);
++    if (Platform.isAndroid && _equalizer != null) {
++      await _equalizer!.setEnabled(GetIt.I<SettingsManager>().equalizerEnabled);
++      _equalizer!.parameters.then((value) async {
++        _equalizerParams ??= value;
++        final List<AndroidEqualizerBand> bands = _equalizerParams!.bands;
++        if (GetIt.I<SettingsManager>().equalizerBandsGain.isEmpty) {
++          GetIt.I<SettingsManager>().equalizerBandsGain =
++              List.generate(bands.length, (index) => 0.0);
++        }
++
++        List<double> equalizerBandsGain =
++            GetIt.I<SettingsManager>().equalizerBandsGain;
++        for (var e in bands) {
++          final gain =
++              equalizerBandsGain.isNotEmpty ? equalizerBandsGain[e.index] : 0.0;
++          _equalizerParams!.bands[e.index].setGain(gain);
++        }
++      });
++      return;
++    }
++
++    // Desktop: the Android branch above pushes saved state through
++    // just_audio's AndroidEqualizer API, which doesn't exist here — do the
++    // same job through the platform-agnostic EqualizerBackend instead, so
++    // a previously-saved EQ curve is actually reapplied on next launch
++    // rather than only showing correctly once the settings page is opened.
++    final backend = GetIt.I<EqualizerBackend>();
++    final settings = GetIt.I<SettingsManager>();
++    final savedGains = settings.equalizerBandsGain;
++
++    if (savedGains.isEmpty) {
++      settings.equalizerBandsGain =
++          List.generate(backend.bands.length, (index) => 0.0);
++    } else {
++      for (var i = 0; i < backend.bands.length && i < savedGains.length; i++) {
++        await backend.setBandGain(i, savedGains[i]);
+       }
+-    });
++    }
++    // Set enabled last: DesktopEqualizer only rebuilds mpv's filter chain
++    // when explicitly enabled, so this applies every restored band gain
++    // in a single pass instead of one filter-chain rebuild per band.
++    await backend.setEnabled(settings.equalizerEnabled);
+   }
+ 
+   Future<void> setLoudnessEnabled(bool value) async {
+diff --git a/packages/just_audio_media_kit/.gitignore b/packages/just_audio_media_kit/.gitignore
+new file mode 100644
+index 0000000..96486fd
+--- /dev/null
++++ b/packages/just_audio_media_kit/.gitignore
+@@ -0,0 +1,30 @@
++# Miscellaneous
++*.class
++*.log
++*.pyc
++*.swp
++.DS_Store
++.atom/
++.buildlog/
++.history
++.svn/
++migrate_working_dir/
++
++# IntelliJ related
++*.iml
++*.ipr
++*.iws
++.idea/
++
++# The .vscode folder contains launch configuration and tasks you configure in
++# VS Code which you may wish to be included in version control, so this line
++# is commented out by default.
++#.vscode/
++
++# Flutter/Dart/Pub related
++# Libraries should not include pubspec.lock, per https://dart.dev/guides/libraries/private-files#pubspeclock.
++/pubspec.lock
++**/doc/api/
++.dart_tool/
++.packages
++build/
+diff --git a/packages/just_audio_media_kit/CHANGELOG.md b/packages/just_audio_media_kit/CHANGELOG.md
+new file mode 100644
+index 0000000..d2942e0
+--- /dev/null
++++ b/packages/just_audio_media_kit/CHANGELOG.md
+@@ -0,0 +1,68 @@
++## 2.1.0+nexmusic-desktop.1
++
++**Locally vendored for NexMusic-Desktop — not an upstream release.**
++
++Added two small public members so app code can reach the underlying mpv
++player to apply raw audio filters (used by the desktop equalizer, which
++previously had no way to make its EQ sliders produce an audible effect):
++
++- `MediaKitPlayer.setMpvProperty(String key, dynamic value)` in
++  `lib/src/mediakit_player.dart`
++- `JustAudioMediaKit.currentPlayer` (returns the most recently created
++  `MediaKitPlayer`, or null) in `lib/just_audio_media_kit.dart`
++
++No other source changes were made. Based on upstream 2.1.0 below.
++
++## 2.1.0
++
++- Implement just_audio_platform_interface 4.5.0 and fix media playing when it's not supposed to ([#23](https://github.com/Pato05/just_audio_media_kit/pull/23), thanks [@ryanheise](https://github.com/ryanheise))
++- Fix `setProperty` not available for web causing unable to compile to a web target ([#15](https://github.com/Pato05/just_audio_media_kit/issues/15))
++- Bump up media-kit to v1.2.0
++
++## 2.0.6
++
++- Add `ClippingAudioSource` support ([#19](https://github.com/Pato05/just_audio_media_kit/pull/19), thanks [@AyaseFile](https://github.com/AyaseFile))
++- Fix InvalidRangeError when there's no `Media` in `Playlist` ([#17](https://github.com/Pato05/just_audio_media_kit/pull/17), thanks [@lvyueyang](https://github.com/lvyueyang) and [@2shrestha22](https://github.com/2shrestha22))
++
++## 2.0.5
++
++- Override duration for [SilenceAudioSource]
++- Fix desync issue when entry is removed from [ConcatenatingAudioSource] (Fixes [#12](https://github.com/Pato05/just_audio_media_kit/issues/12))
++
++## 2.0.4
++
++- Support `--prefetch-playlist` for gapless playback (fixes [#11](https://github.com/Pato05/just_audio_media_kit/issues/11))
++- Reset `Duration` on track change (fixes [#10](https://github.com/Pato05/just_audio_media_kit/issues/10))
++- Set `pitch` to `true` by default (fix `setPitch` not working)
++
++## 2.0.3
++
++- Add `libmpv` parameter to `ensureInitialized` ([#9](https://github.com/Pato05/just_audio_media_kit/issues/9))
++
++## 2.0.2
++
++- Fix: defer setting initial position to when the track starts loading (fixes seeking before loading the track, which seems not to be currently supported by `media_kit`): see [related issue](https://github.com/Pato05/just_audio_media_kit/issues/6) and [`media_kit` related issue](https://github.com/media-kit/media-kit/issues/228)
++- Add `SilenceAudioSource` support via anullsrc ([taken from just_audio_mpv](https://github.com/bleonard252/just_audio_mpv/blob/main/lib/src/mpv_player.dart#L137))
++
++## 2.0.1
++
++- Fix issues regarding disposal of current players
++
++## 2.0.0
++
++- **BREAKING: Removed hard dependencies** (Read the installation steps in README to comply!)
++- Fix queue insert with index
++- Fix moving items in ConcatenatingAudioSource
++
++## 1.0.0
++
++- Make private methods private, as they should've been
++- Set position and index on load (and reset bufferedPosition)
++- Fix disposePlayer() failing by making it so that if the player was already disposed, it won't throw, since `just_audio` can send out two identical dispose requests.
++- More settings
++- Update `media_kit` to `^1.1.9`
++
++## 0.0.1
++
++- Initial release
++- Linux and Windows support
+diff --git a/packages/just_audio_media_kit/LICENSE b/packages/just_audio_media_kit/LICENSE
+new file mode 100644
+index 0000000..fdddb29
+--- /dev/null
++++ b/packages/just_audio_media_kit/LICENSE
+@@ -0,0 +1,24 @@
++This is free and unencumbered software released into the public domain.
++
++Anyone is free to copy, modify, publish, use, compile, sell, or
++distribute this software, either in source code form or as a compiled
++binary, for any purpose, commercial or non-commercial, and by any
++means.
++
++In jurisdictions that recognize copyright laws, the author or authors
++of this software dedicate any and all copyright interest in the
++software to the public domain. We make this dedication for the benefit
++of the public at large and to the detriment of our heirs and
++successors. We intend this dedication to be an overt act of
++relinquishment in perpetuity of all present and future rights to this
++software under copyright law.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
++IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
++OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
++ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
++OTHER DEALINGS IN THE SOFTWARE.
++
++For more information, please refer to <https://unlicense.org>
+diff --git a/packages/just_audio_media_kit/README.md b/packages/just_audio_media_kit/README.md
+new file mode 100644
+index 0000000..8c97635
+--- /dev/null
++++ b/packages/just_audio_media_kit/README.md
+@@ -0,0 +1,157 @@
++# just_audio_media_kit
++
++[`media_kit`](https://github.com/media-kit/media-kit) bindings for [`just_audio`](https://github.com/ryanheise/just_audio)
++
++## Breaking changes in 2.x
++
++The installation process has changed, please re-read the install instructions.
++
++## Installation
++
++### In your `pubspec.yaml`:
++
++```yaml
++dependencies:
++  just_audio_media_kit: ^2.1.0
++
++  # Select the native media_kit libs based on your usage:
++  # NOTE: if including video libs already, these audio libs aren't necessary.
++  media_kit_libs_linux: any
++  media_kit_libs_windows_audio: any
++```
++
++**Note**: you can also use `just_audio_media_kit` for Android, iOS and macOS by including the required libs (see below) and enable them in `ensureInitialized()`. However, this is not required as they're natively supported by `just_audio`.
++
++### Use mimalloc (from [media-kit's README](https://github.com/media-kit/media-kit?tab=readme-ov-file#utilize-mimalloc))
++
++You should consider replacing the default memory allocator with [mimalloc](https://github.com/microsoft/mimalloc) for [avoiding memory leaks](https://github.com/media-kit/media-kit/issues/68).
++
++This is as simple as [adding one line to `linux/CMakeLists.txt`](https://github.com/media-kit/media-kit/blob/d02a97ce70b316207db024401fb99e3f4509a250/media_kit_test/linux/CMakeLists.txt#L92-L94):
++
++```cmake
++target_link_libraries(${BINARY_NAME} PRIVATE ${MIMALLOC_LIB})
++```
++
++### Before using the `AudioPlayer`, call
++
++```dart
++// by default, windows and linux are enabled
++JustAudioMediaKit.ensureInitialized();
++
++// or, if you want to manually configure enabled platforms instead:
++// make sure to include the required dependency in pubspec.yaml for
++// each enabled platform!
++JustAudioMediaKit.ensureInitialized(
++    linux: true,            // default: true  - dependency: media_kit_libs_linux
++    windows: true,          // default: true  - dependency: media_kit_libs_windows_audio
++    android: true,          // default: false - dependency: media_kit_libs_android_audio
++    iOS: true,              // default: false - dependency: media_kit_libs_ios_audio
++    macOS: true,            // default: false - dependency: media_kit_libs_macos_audio
++);
++```
++
++Now you can use just_audio's `AudioPlayer` as normal!
++
++## Plugin-specific configuration (settings for `media_kit`'s `Player()` instance)
++
++**NOTE**: these must be set <u>before</u> the player initializes or they won't work (you can set these right after or before calling `ensureInitialized`)!
++
++Set MPV's log level. Default: `MPVLogLevel.error`
++
++```dart
++JustAudioMediaKit.mpvLogLevel = MPVLogLevel.debug;
++```
++
++Sets the demuxer's cache size (in bytes). Default: `32 * 1024 * 1204` (32 MB)
++
++```dart
++JustAudioMediaKit.bufferSize = 8 * 1024 * 1024; // 8 MB
++```
++
++Sets the name of the underlying window and process for native backend. This is visible, for example, inside the Windows' volume mixer or also in `pavucontrol` on Linux. Default: `'JustAudioMediaKit'`
++
++```dart
++JustAudioMediaKit.title = 'My Audio Player App';
++```
++
++Sets the list of allowed protocols for native backend. Default: `['udp', 'rtp', 'tcp', 'tls', 'data', 'file', 'http', 'https', 'crypto']`
++
++**IF YOU EDIT THIS OPTION**: Remember that `file` is needed for playing local files (assets included!), `https` and `http` are needed to play from URLs and `http` to play from a `StreamAudioSource` (and sources that implement it, like `LockCachingAudioSource`).
++
++```dart
++JustAudioMediaKit.protocolWhitelist = const ['http', 'https'];
++```
++
++Enables or disables pitch shift control for native backend (with this set to false, `setPitch` won't work). Default: `true`
++
++```dart
++JustAudioMediaKit.pitch = true;
++```
++
++Enables gapless playback via the [`--prefetch-playlist`](https://mpv.io/manual/stable/#options-prefetch-playlist) in libmpv. Default: `false`
++
++This is highly experimental. Use at your own risk.
++
++Check [mpv's docs](https://mpv.io/manual/stable/#options-prefetch-playlist) and
++[the related issue](https://github.com/Pato05/just_audio_media_kit/issues/11) for more information
++
++```dart
++JustAudioMediaKit.prefetchPlaylist = true;
++```
++
++## Manually specify `libmpv` path (ADVANCED)
++
++To manually specify the `libmpv` path, you can use the `libmpv` parameter in the `ensureInitialized` method:
++
++```dart
++JustAudioMediaKit.ensureInitialized(
++    libmpv: '/usr/lib/libmpv.so.2',
++);
++```
++
++This is **NOT NEEDED** in most cases, as `package:media_kit` will choose the right library for you (and can even bundle `libmpv` via the `media_kit_libs_*_*` packages). If you choose to use this option, you will have to perform checks about what platform you're on and where `libmpv` is located in that specific platform.
++
++## Features
++
++| Feature                        |                |
++| ------------------------------ | :------------: |
++| read from URL                  |       ✅       |
++| read from file                 |       ✅       |
++| read from asset                |       ✅       |
++| read from byte stream          |      ✅\*      |
++| request headers                | ✅ (untested)  |
++| DASH                           | ✅ (untested)  |
++| HLS                            | ✅ (untested)  |
++| ICY metadata                   |                |
++| buffer status/position         |       ✅       |
++| play/pause/seek                |       ✅       |
++| set volume/speed               |       ✅       |
++| clip audio                     |       ✅       |
++| playlists                      |       ✅       |
++| looping/shuffling              |       ✅       |
++| compose audio                  |                |
++| gapless playback               |       ✅\*\*   |
++| report player errors           |       ✅       |
++| handle phonecall interruptions |                |
++| buffering/loading options      |                |
++| set pitch                      |       ✅       |
++| skip silence                   |                |
++| equalizer                      |                |
++| volume boost                   |                |
++
++\* reads from byte stream via a local HTTP server provided by `just_audio`
++<br>\*\* needs to be enabled
++
++## Caveats
++
++- `just_audio`'s shuffleOrder is currently ignored, because there doesn't seem to be a straightforward way to implement it: because of this, I recommend implementing shuffle by manually shuffling the queue, create a new `ConcatenatingAudioSource` and use `setAudioSource` on your player object.
++  - See: [#3](https://github.com/Pato05/just_audio_media_kit/issues/3) and [#13](https://github.com/Pato05/just_audio_media_kit/issues/13)
++  - Correct shuffle order implementation is currently implemented in [feat/queue-shuffle](https://github.com/Pato05/just_audio_media_kit/tree/feat/queue-shuffle)
++- `SilenceAudioSource` is currently not supported (issue: [media-kit#28](https://github.com/media-kit/media-kit/issues/28)).
++- The plugin hasn't been tested with multiple player instances, though it should work without any issues.
++
++## Licensing
++
++This package is licensed under the `Unlicense` license, though
++please note that `package:media_kit` (which is a direct dependency of this package) is licensed under the `MIT` license.
++So please refer to [`package:media_kit`](https://github.com/media-kit/media-kit) for potential licensing issues.
+diff --git a/packages/just_audio_media_kit/analysis_options.yaml b/packages/just_audio_media_kit/analysis_options.yaml
+new file mode 100644
+index 0000000..a5744c1
+--- /dev/null
++++ b/packages/just_audio_media_kit/analysis_options.yaml
+@@ -0,0 +1,4 @@
++include: package:flutter_lints/flutter.yaml
++
++# Additional information about this file can be found at
++# https://dart.dev/guides/language/analysis-options
+diff --git a/packages/just_audio_media_kit/lib/just_audio_media_kit.dart b/packages/just_audio_media_kit/lib/just_audio_media_kit.dart
+new file mode 100644
+index 0000000..138c6f9
+--- /dev/null
++++ b/packages/just_audio_media_kit/lib/just_audio_media_kit.dart
+@@ -0,0 +1,157 @@
++/// `package:media_kit` bindings for `just_audio` to support Linux and Windows.
++library;
++
++import 'dart:collection';
++
++import 'package:flutter/services.dart';
++import 'package:just_audio_media_kit/src/mediakit_player.dart';
++import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
++import 'package:logging/logging.dart';
++import 'package:media_kit/media_kit.dart';
++import 'package:universal_platform/universal_platform.dart';
++
++class JustAudioMediaKit extends JustAudioPlatform {
++  JustAudioMediaKit._();
++
++  /// The internal MPV player's logLevel
++  static MPVLogLevel mpvLogLevel = MPVLogLevel.error;
++
++  /// Sets the demuxer's cache size (in bytes)
++  static int bufferSize = 32 * 1024 * 1024;
++
++  /// Sets the name of the underlying window & process for native backend. This is visible inside the Windows' volume mixer.
++  static String title = 'JustAudioMediaKit';
++
++  /// Sets the list of allowed protocols for native backend.
++  static List<String> protocolWhitelist = const [
++    'udp',
++    'rtp',
++    'tcp',
++    'tls',
++    'data',
++    'file',
++    'http',
++    'https',
++    'crypto',
++  ];
++
++  /// Enables or disables pitch shift control for native backend (with this set to false, [setPitch] won't work).
++  ///
++  /// This uses `scaletempo` under the hood & disables `audio-pitch-correction`.
++  static bool pitch = true;
++
++  /// Enables gapless playback via the [`--prefetch-playlist`](https://mpv.io/manual/stable/#options-prefetch-playlist) in libmpv
++  ///
++  /// This is highly experimental. Use at your own risk.
++  ///
++  /// Check [mpv's docs](https://mpv.io/manual/stable/#options-prefetch-playlist) and
++  /// [the related issue](https://github.com/Pato05/just_audio_media_kit/issues/11) for more information
++  static bool prefetchPlaylist = false;
++
++  /// Path to PEM client certificate file for mTLS.
++  static String? tlsCertFile;
++
++  /// Path to PEM private key file for mTLS.
++  static String? tlsKeyFile;
++
++  static final _logger = Logger('JustAudioMediaKit');
++  final _players = HashMap<String, MediaKitPlayer>();
++
++  /// The most recently created player, or null if none exist yet.
++  ///
++  /// --- NexMusic-Desktop local addition ---
++  /// NexMusic-Desktop only ever constructs a single just_audio
++  /// [AudioPlayer] app-wide (see `lib/services/media_player.dart`), so
++  /// "most recent" is unambiguous in practice. Paired with
++  /// [MediaKitPlayer.setMpvProperty] to let app code (the desktop
++  /// equalizer) apply raw mpv properties that just_audio's own API has
++  /// no equivalent for.
++  MediaKitPlayer? get currentPlayer =>
++      _players.isEmpty ? null : _players.values.last;
++
++  /// Players that are disposing (player id -> future that completes when the player is disposed)
++  final _disposingPlayers = HashMap<String, Future<void>>();
++
++  /// Initializes the plugin if the platform we're running on is marked
++  /// as true, otherwise it will leave everything unchanged.
++  ///
++  /// Can also be safely called from Web, even though it'll have no effect
++  static void ensureInitialized({
++    bool linux = true,
++    bool windows = true,
++    bool android = false,
++    bool iOS = false,
++    bool macOS = false,
++
++    /// The path to the libmpv dynamic library.
++    /// The name of the library is generally `libmpv.so` on GNU/Linux and `libmpv-2.dll` on Windows.
++    String? libmpv,
++  }) {
++    if ((UniversalPlatform.isLinux && linux) ||
++        (UniversalPlatform.isWindows && windows) ||
++        (UniversalPlatform.isAndroid && android) ||
++        (UniversalPlatform.isIOS && iOS) ||
++        (UniversalPlatform.isMacOS && macOS)) {
++      registerWith();
++      MediaKit.ensureInitialized(libmpv: libmpv);
++    }
++  }
++
++  /// Registers the plugin with [JustAudioPlatform]
++  static void registerWith() {
++    JustAudioPlatform.instance = JustAudioMediaKit._();
++  }
++
++  @override
++  Future<AudioPlayerPlatform> init(InitRequest request) async {
++    if (_players.containsKey(request.id)) {
++      throw PlatformException(
++          code: 'error', message: 'Player ${request.id} already exists!');
++    }
++
++    _logger.fine('instantiating new player ${request.id}');
++    final player = MediaKitPlayer(request.id);
++    _players[request.id] = player;
++    await player.ready();
++    _logger.fine('player ready! (players: $_players)');
++    return player;
++  }
++
++  @override
++  Future<DisposePlayerResponse> disposePlayer(
++      DisposePlayerRequest request) async {
++    _logger.fine('disposing player ${request.id}');
++
++    // temporary workaround because disposePlayer is called more than once
++    if (_disposingPlayers.containsKey(request.id)) {
++      _logger.fine('disposePlayer() called more than once!');
++      await _disposingPlayers[request.id]!;
++      return DisposePlayerResponse();
++    }
++
++    if (!_players.containsKey(request.id)) {
++      throw PlatformException(
++          code: 'error', message: 'Player ${request.id} doesn\'t exist.');
++    }
++
++    final future = _players[request.id]!.release();
++    _players.remove(request.id);
++    _disposingPlayers[request.id] = future;
++    await future;
++    _disposingPlayers.remove(request.id);
++
++    _logger.fine('player ${request.id} disposed!');
++    return DisposePlayerResponse();
++  }
++
++  @override
++  Future<DisposeAllPlayersResponse> disposeAllPlayers(
++      DisposeAllPlayersRequest request) async {
++    _logger.fine('disposing of all players...');
++    if (_players.isNotEmpty) {
++      await Future.wait(_players.values.map((e) => e.release()));
++      _players.clear();
++    }
++    return DisposeAllPlayersResponse();
++  }
++}
+diff --git a/packages/just_audio_media_kit/lib/src/mediakit_player.dart b/packages/just_audio_media_kit/lib/src/mediakit_player.dart
+new file mode 100644
+index 0000000..959eb99
+--- /dev/null
++++ b/packages/just_audio_media_kit/lib/src/mediakit_player.dart
+@@ -0,0 +1,444 @@
++import 'dart:async';
++
++import 'package:just_audio_media_kit/just_audio_media_kit.dart';
++import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
++import 'package:logging/logging.dart';
++import 'package:media_kit/media_kit.dart';
++import 'set_property.dart';
++
++/// An [AudioPlayerPlatform] which wraps `package:media_kit`'s [Player]
++class MediaKitPlayer extends AudioPlayerPlatform {
++  static const kErrorCode = 1;
++
++  /// `package:media_kit`'s [Player]
++  late final Player _player;
++
++  /// The subscriptions that have to be disposed
++  late final List<StreamSubscription> _streamSubscriptions;
++
++  final _readyCompleter = Completer<void>();
++
++  /// Completes when the player is ready
++  Future<void> ready() => _readyCompleter.future;
++
++  static final _logger = Logger('MediaKitPlayer');
++
++  final _eventController = StreamController<PlaybackEventMessage>.broadcast();
++  final _dataController = StreamController<PlayerDataMessage>.broadcast();
++
++  /// Sets a raw mpv property (e.g. the `af` audio-filter chain) on this
++  /// player.
++  ///
++  /// --- NexMusic-Desktop local addition ---
++  /// Upstream just_audio_media_kit keeps [_player] entirely private with
++  /// no supported way to reach it from outside the package, which is what
++  /// blocked NexMusic-Desktop's equalizer from ever applying real audio
++  /// filters (see `lib/services/desktop_equalizer.dart`). This method,
++  /// and [JustAudioMediaKit.currentPlayer] below, are the only two
++  /// additions made to this vendored copy; everything else is unmodified
++  /// upstream source.
++  Future<void> setMpvProperty(String key, dynamic value) =>
++      setProperty(_player, key, value);
++
++  ProcessingStateMessage _processingState = ProcessingStateMessage.idle;
++  Duration _bufferedPosition = Duration.zero;
++  Duration _position = Duration.zero;
++  Duration? _duration;
++  bool _playing = false;
++  bool _mediaOpened = false;
++  int? _errorCode;
++  String? _errorMessage;
++  Completer<Duration?>? _loadCompleter;
++
++  /// The index that's currently playing
++  int _currentIndex = 0;
++
++  /// [LoadRequest.initialPosition] or [seek] request before [Player.play] was called and/or finished loading.
++  Duration? _setPosition;
++
++  Media? get _currentMedia {
++    var medias = _player.state.playlist.medias;
++    if (medias.isEmpty) return null;
++    return medias[_player.state.playlist.index];
++  }
++
++  MediaKitPlayer(super.id) {
++    _player = Player(
++        configuration: PlayerConfiguration(
++      pitch: JustAudioMediaKit.pitch,
++      protocolWhitelist: JustAudioMediaKit.protocolWhitelist,
++      title: JustAudioMediaKit.title,
++      bufferSize: JustAudioMediaKit.bufferSize,
++      logLevel: JustAudioMediaKit.mpvLogLevel,
++      ready: () => _readyCompleter.complete(),
++    ));
++
++    if (JustAudioMediaKit.prefetchPlaylist) {
++      setProperty(_player, 'prefetch-playlist', 'yes');
++    }
++    if (JustAudioMediaKit.tlsCertFile != null) {
++      setProperty(_player, 'tls-cert-file', JustAudioMediaKit.tlsCertFile!);
++    }
++    if (JustAudioMediaKit.tlsKeyFile != null) {
++      setProperty(_player, 'tls-key-file', JustAudioMediaKit.tlsKeyFile!);
++    }
++
++    _streamSubscriptions = [
++      _player.stream.duration.listen((duration) {
++        if (_currentMedia?.extras?['overrideDuration'] != null) return;
++
++        if (_setPosition != null && duration.inSeconds > 0) {
++          unawaited(_player.seek(_setPosition!));
++          _setPosition = null;
++        }
++        _updateDuration(duration);
++        _updatePlaybackEvent();
++      }),
++      _player.stream.position.listen((position) {
++        _position = position;
++        final start = _currentMedia?.start;
++        if (start != null) _position -= start;
++        if (_position < Duration.zero) _position = Duration.zero;
++        _updatePlaybackEvent();
++      }),
++      _player.stream.buffering.listen((isBuffering) {
++        final start = _currentMedia?.start;
++        if (!isBuffering && start != null && _bufferedPosition <= start) {
++          // Not ready yet, will be triggered by _player.stream.buffer
++          return;
++        }
++        if (_processingState == ProcessingStateMessage.loading) {
++          if (!isBuffering && _mediaOpened) {
++            _processingState = ProcessingStateMessage.ready;
++            if (_loadCompleter?.isCompleted != true) {
++              _loadCompleter?.complete(_duration);
++            }
++          }
++        } else if (_processingState != ProcessingStateMessage.completed ||
++            isBuffering) {
++          _processingState = isBuffering
++              ? ProcessingStateMessage.buffering
++              : ProcessingStateMessage.ready;
++          if (_duration == null) {
++            _updateDuration(_player.state.duration);
++          }
++        }
++        _errorCode = null;
++        _errorMessage = null;
++        _updatePlaybackEvent();
++      }),
++      _player.stream.buffer.listen((buffer) {
++        _bufferedPosition = buffer;
++        // Detect ready for clipping audio source
++        final start = _currentMedia?.start;
++        if (!_player.state.buffering &&
++            _mediaOpened &&
++            start != null &&
++            _bufferedPosition > start) {
++          _processingState = ProcessingStateMessage.ready;
++          if (_loadCompleter?.isCompleted != true) {
++            _loadCompleter?.complete(_duration);
++          }
++        }
++        _updatePlaybackEvent();
++      }),
++      _player.stream.volume.listen((volume) {
++        _dataController.add(PlayerDataMessage(volume: volume / 100.0));
++      }),
++      _player.stream.completed.listen((completed) {
++        _bufferedPosition = _position = Duration.zero;
++        if (completed &&
++            // is at the end of the [Playlist]
++            _currentIndex == _player.state.playlist.medias.length - 1 &&
++            // is not looping (technically this shouldn't be fired if the player is looping)
++            _player.state.playlistMode == PlaylistMode.none) {
++          _processingState = ProcessingStateMessage.completed;
++        }
++        _errorCode = null;
++        _errorMessage = null;
++
++        _updatePlaybackEvent();
++      }),
++      _player.stream.error.listen((error) {
++        final errorUri = RegExp(r'Failed to open (.*)\.').firstMatch(error)?[1];
++        if (errorUri == null || errorUri == _currentMedia?.uri) {
++          _processingState = ProcessingStateMessage.idle;
++          _errorCode = kErrorCode;
++          _errorMessage = error;
++          _updatePlaybackEvent();
++        }
++        _logger.severe('ERROR OCCURRED: $error');
++      }),
++      _player.stream.playlist.listen((playlist) {
++        if (_currentIndex != playlist.index) {
++          _bufferedPosition = _position = Duration.zero;
++          _currentIndex = playlist.index;
++        }
++        _duration = _currentMedia?.extras?['overrideDuration'];
++        _updatePlaybackEvent();
++      }),
++      _player.stream.playlistMode.listen((playlistMode) {
++        _dataController.add(
++            PlayerDataMessage(loopMode: _playlistModeToLoopMode(playlistMode)));
++      }),
++      _player.stream.pitch.listen((pitch) {
++        _dataController.add(PlayerDataMessage(pitch: pitch));
++      }),
++      _player.stream.rate.listen((rate) {
++        _dataController.add(PlayerDataMessage(speed: rate));
++      }),
++      _player.stream.log.listen((event) {
++        // ignore: avoid_print
++        print("MPV: [${event.level}] ${event.prefix}: ${event.text}");
++      }),
++    ];
++  }
++
++  void _updateDuration(Duration duration) {
++    final start = _currentMedia?.start;
++    final end = _currentMedia?.end;
++    if (end != null) duration = end;
++    if (start != null) duration -= start;
++    _duration = duration;
++  }
++
++  PlaylistMode _loopModeToPlaylistMode(LoopModeMessage loopMode) {
++    return switch (loopMode) {
++      LoopModeMessage.off => PlaylistMode.none,
++      LoopModeMessage.one => PlaylistMode.single,
++      LoopModeMessage.all => PlaylistMode.loop,
++    };
++  }
++
++  LoopModeMessage _playlistModeToLoopMode(PlaylistMode playlistMode) {
++    return switch (playlistMode) {
++      PlaylistMode.none => LoopModeMessage.off,
++      PlaylistMode.single => LoopModeMessage.one,
++      PlaylistMode.loop => LoopModeMessage.all,
++    };
++  }
++
++  @override
++  Stream<PlaybackEventMessage> get playbackEventMessageStream =>
++      _eventController.stream;
++
++  @override
++  Stream<PlayerDataMessage> get playerDataMessageStream =>
++      _dataController.stream;
++
++  /// Updates the playback event
++  void _updatePlaybackEvent() {
++    _eventController.add(PlaybackEventMessage(
++      processingState: _processingState,
++      updateTime: DateTime.now(),
++      updatePosition: _position,
++      bufferedPosition: _bufferedPosition,
++      duration: _duration,
++      icyMetadata: null,
++      currentIndex: _currentIndex,
++      androidAudioSessionId: null,
++      errorCode: _errorCode,
++      errorMessage: _errorMessage,
++    ));
++  }
++
++  @override
++  Future<LoadResponse> load(LoadRequest request) async {
++    _logger.finest('load(${request.toMap()})');
++    _mediaOpened = false;
++    _loadCompleter = Completer();
++    _currentIndex = request.initialIndex ?? 0;
++    _bufferedPosition = Duration.zero;
++    _position = Duration.zero;
++    _duration = null;
++    _processingState = ProcessingStateMessage.loading;
++    _errorCode = null;
++    _errorMessage = null;
++    _updatePlaybackEvent();
++
++    if (request.audioSourceMessage is ConcatenatingAudioSourceMessage) {
++      final audioSource =
++          request.audioSourceMessage as ConcatenatingAudioSourceMessage;
++      final playable = Playlist(
++          audioSource.children.map(_convertAudioSourceIntoMediaKit).toList(),
++          index: _currentIndex);
++
++      await _player.open(playable, play: _playing);
++    } else {
++      final playable =
++          _convertAudioSourceIntoMediaKit(request.audioSourceMessage);
++      _logger.finest('playable is ${playable.toString()}');
++      await _player.open(playable, play: _playing);
++    }
++    _mediaOpened = true;
++
++    if (request.initialPosition != null) {
++      _setPosition = _position = request.initialPosition!;
++    }
++
++    _updatePlaybackEvent();
++    final duration = await _loadCompleter?.future;
++    return LoadResponse(duration: duration);
++  }
++
++  @override
++  Future<PlayResponse> play(PlayRequest request) async {
++    _playing = true;
++    if (_mediaOpened) {
++      await _player.play();
++    }
++    return PlayResponse();
++  }
++
++  @override
++  Future<PauseResponse> pause(PauseRequest request) async {
++    _playing = false;
++    if (_mediaOpened) {
++      await _player.pause();
++    }
++    return PauseResponse();
++  }
++
++  @override
++  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) {
++    return _player
++        .setVolume(request.volume * 100.0)
++        .then((value) => SetVolumeResponse());
++  }
++
++  @override
++  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) {
++    return _player.setRate(request.speed).then((_) => SetSpeedResponse());
++  }
++
++  @override
++  Future<SetPitchResponse> setPitch(SetPitchRequest request) =>
++      _player.setPitch(request.pitch).then((_) => SetPitchResponse());
++
++  @override
++  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async {
++    await _player.setPlaylistMode(_loopModeToPlaylistMode(request.loopMode));
++    return SetLoopModeResponse();
++  }
++
++  @override
++  Future<SetShuffleModeResponse> setShuffleMode(
++      SetShuffleModeRequest request) async {
++    bool shuffling = request.shuffleMode != ShuffleModeMessage.none;
++    await _player.setShuffle(shuffling);
++
++    _dataController.add(PlayerDataMessage(
++        shuffleMode:
++            shuffling ? ShuffleModeMessage.all : ShuffleModeMessage.none));
++    return SetShuffleModeResponse();
++  }
++
++  @override
++  Future<SeekResponse> seek(SeekRequest request) async {
++    _logger.finest('seek(${request.toMap()})');
++    if (request.index != null) {
++      await _player.jump(request.index!);
++      if (!_playing) await _player.pause();
++    }
++
++    final position = request.position;
++    if (position != null) {
++      _position = position;
++
++      final start = _currentMedia?.start;
++      var nativePosition = position;
++      if (start != null) nativePosition += start;
++      if (_player.state.duration.inSeconds > 0) {
++        await _player.seek(nativePosition);
++      } else {
++        _setPosition = nativePosition;
++      }
++    } else {
++      _position = Duration.zero;
++    }
++
++    // reset position on seek
++    _updatePlaybackEvent();
++    return SeekResponse();
++  }
++
++  @override
++  Future<ConcatenatingInsertAllResponse> concatenatingInsertAll(
++      ConcatenatingInsertAllRequest request) async {
++    // _logger.fine('concatenatingInsertAll(${request.toMap()})');
++    for (final source in request.children) {
++      await _player.add(_convertAudioSourceIntoMediaKit(source));
++
++      final length = _player.state.playlist.medias.length;
++
++      if (length == 0 || length == 1) continue;
++
++      if (request.index < (length - 1) && request.index >= 0) {
++        await _player.move(length, request.index);
++      }
++    }
++
++    return ConcatenatingInsertAllResponse();
++  }
++
++  @override
++  Future<ConcatenatingRemoveRangeResponse> concatenatingRemoveRange(
++      ConcatenatingRemoveRangeRequest request) async {
++    for (var i = request.startIndex; i < request.endIndex; i++) {
++      await _player.remove(request.startIndex);
++    }
++
++    return ConcatenatingRemoveRangeResponse();
++  }
++
++  @override
++  Future<ConcatenatingMoveResponse> concatenatingMove(
++      ConcatenatingMoveRequest request) {
++    return _player
++        .move(
++            request.currentIndex,
++            // not sure why, but apparently there's an underlying difference between just_audio's move implementation
++            // and media_kit, so let's fix it
++            request.currentIndex > request.newIndex
++                ? request.newIndex
++                : request.newIndex + 1)
++        .then((_) => ConcatenatingMoveResponse());
++  }
++
++  /// Release the resources used by this player.
++  Future<void> release() async {
++    _logger.info('releasing player resources');
++    _mediaOpened = false;
++    await _player.dispose();
++    // cancel all stream subscriptions
++    for (final StreamSubscription subscription in _streamSubscriptions) {
++      unawaited(subscription.cancel());
++    }
++    _streamSubscriptions.clear();
++  }
++
++  /// Converts an [AudioSourceMessage] into a [Media] for playback
++  Media _convertAudioSourceIntoMediaKit(AudioSourceMessage audioSource) {
++    switch (audioSource) {
++      case final UriAudioSourceMessage uriSource:
++        return Media(uriSource.uri, httpHeaders: audioSource.headers);
++
++      // removed because it doesn't seem to be actually working.
++      // Related media-kit issue: https://github.com/media-kit/media-kit/issues/28
++      // case final SilenceAudioSourceMessage silenceSource:
++      //   // from https://github.com/bleonard252/just_audio_mpv/blob/main/lib/src/mpv_player.dart#L137
++      //   return Media(
++      //     'av://lavfi:anullsrc=d=${silenceSource.duration.inMilliseconds}ms',
++      //     extras: {'overrideDuration': silenceSource.duration},
++      //   );
++
++      case final ClippingAudioSourceMessage clippingSource:
++        return Media(clippingSource.child.uri,
++            start: clippingSource.start, end: clippingSource.end);
++
++      default:
++        throw UnsupportedError(
++            '${audioSource.runtimeType} is currently not supported');
++    }
++  }
++}
+diff --git a/packages/just_audio_media_kit/lib/src/set_property.dart b/packages/just_audio_media_kit/lib/src/set_property.dart
+new file mode 100644
+index 0000000..c016abb
+--- /dev/null
++++ b/packages/just_audio_media_kit/lib/src/set_property.dart
+@@ -0,0 +1 @@
++export 'set_property_noop.dart' if (dart.library.io) 'set_property_io.dart';
+diff --git a/packages/just_audio_media_kit/lib/src/set_property_io.dart b/packages/just_audio_media_kit/lib/src/set_property_io.dart
+new file mode 100644
+index 0000000..2821fa8
+--- /dev/null
++++ b/packages/just_audio_media_kit/lib/src/set_property_io.dart
+@@ -0,0 +1,6 @@
++import 'package:media_kit/media_kit.dart';
++
++Future<void> setProperty(Player player, String key, dynamic value) async {
++  if (player.platform is! NativePlayer) return;
++  await (player.platform as NativePlayer).setProperty(key, value);
++}
+diff --git a/packages/just_audio_media_kit/lib/src/set_property_noop.dart b/packages/just_audio_media_kit/lib/src/set_property_noop.dart
+new file mode 100644
+index 0000000..ba2c11f
+--- /dev/null
++++ b/packages/just_audio_media_kit/lib/src/set_property_noop.dart
+@@ -0,0 +1,6 @@
++import 'package:media_kit/media_kit.dart';
++
++Future<void> setProperty(Player player, String key, dynamic value) {
++  // noop
++  return Future.value();
++}
+diff --git a/packages/just_audio_media_kit/pubspec.yaml b/packages/just_audio_media_kit/pubspec.yaml
+new file mode 100644
+index 0000000..9034779
+--- /dev/null
++++ b/packages/just_audio_media_kit/pubspec.yaml
+@@ -0,0 +1,21 @@
++name: just_audio_media_kit
++description: package:media_kit bindings for just_audio to support Linux and Windows.
++version: 2.1.0+nexmusic-desktop.1
++repository: https://github.com/Pato05/just_audio_media_kit
++
++environment:
++  sdk: ">=3.1.3 <4.0.0"
++  flutter: ">=1.20.0"
++
++dependencies:
++  flutter:
++    sdk: flutter
++  logging: ^1.2.0
++  just_audio_platform_interface: ^4.5.0
++  media_kit: ^1.2.0
++  universal_platform: ^1.0.0+1
++
++dev_dependencies:
++  flutter_test:
++    sdk: flutter
++  flutter_lints: ^3.0.1
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 86ed732..bbb2db6 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -34,6 +34,7 @@ dependencies:
+   flutter_staggered_grid_view: ^0.7.0
+   flutter_swipe_action_cell: ^3.1.3
+   just_audio: ^0.10.5
++  just_audio_platform_interface: ^4.5.0
+   just_audio_background: ^0.0.1-beta.14
+   audio_video_progress_bar: ^2.0.3
+   sliding_up_panel: ^2.0.0+1
+@@ -54,7 +55,13 @@ dependencies:
+   media_kit_libs_windows_audio: any
+   media_kit_libs_linux: any
+   media_kit_libs_macos_audio: any
+-  just_audio_media_kit: ^2.0.6
++  # Vendored locally (packages/just_audio_media_kit) with two small public
++  # additions needed to make the desktop equalizer apply real mpv audio
++  # filters — upstream keeps its player registry entirely private with no
++  # supported way to reach it. See that package's CHANGELOG.md for exactly
++  # what was added; everything else is unmodified upstream source (2.1.0).
++  just_audio_media_kit:
++    path: packages/just_audio_media_kit
+   media_kit_native_event_loop: any
+ 
+   flutter_colorpicker: ^1.1.0

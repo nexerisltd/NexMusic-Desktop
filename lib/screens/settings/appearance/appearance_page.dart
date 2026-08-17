@@ -149,7 +149,35 @@ class AppearancePage extends StatelessWidget {
                             .read<AppearanceCubit>()
                             .setAutoScrollLyrics(value);
                       },
+                    ),
+
+                    SettingTile(
+                      title: "Lyrics text position",
+                      leading: const Icon(Icons.format_align_center),
                       isLast: true,
+                      trailing: AdaptiveDropdownButton<int>(
+                        value: s.lyricsTextPosition,
+                        items: [
+                          AdaptiveDropdownMenuItem(
+                            value: 0,
+                            child: Text("Left"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 1,
+                            child: Text("Center"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 2,
+                            child: Text("Right"),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          context
+                              .read<AppearanceCubit>()
+                              .setLyricsTextPosition(value);
+                        },
+                      ),
                     ),
 
                     const GroupTitle(title: "Player"),
@@ -210,6 +238,83 @@ class AppearancePage extends StatelessWidget {
                           context
                               .read<AppearanceCubit>()
                               .setPlayerBackgroundStyle(value);
+                        },
+                      ),
+                    ),
+
+                    const GroupTitle(title: "Player controls"),
+
+                    SettingSwitchTile(
+                      title: "Crop album art",
+                      subtitle: "Fill the frame instead of showing it whole",
+                      leading: const Icon(Icons.crop),
+                      value: s.cropAlbumArt,
+                      isFirst: true,
+                      onChanged: (value) {
+                        context
+                            .read<AppearanceCubit>()
+                            .setCropAlbumArt(value);
+                      },
+                    ),
+
+                    SettingTile(
+                      title: "Player buttons style",
+                      leading: const Icon(Icons.tune),
+                      isLast: true,
+                      trailing: AdaptiveDropdownButton<int>(
+                        value: s.playerButtonsStyle,
+                        items: [
+                          AdaptiveDropdownMenuItem(
+                            value: 0,
+                            child: Text("Default"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 1,
+                            child: Text("Primary color"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 2,
+                            child: Text("Tertiary color"),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          context
+                              .read<AppearanceCubit>()
+                              .setPlayerButtonsStyle(value);
+                        },
+                      ),
+                    ),
+
+                    const GroupTitle(title: "Navigation"),
+
+                    SettingTile(
+                      title: "Default open tab",
+                      subtitle: "Which tab NexMusic opens to on startup",
+                      leading: const Icon(Icons.tab_outlined),
+                      isFirst: true,
+                      isLast: true,
+                      trailing: AdaptiveDropdownButton<int>(
+                        value: s.defaultOpenTab,
+                        items: [
+                          AdaptiveDropdownMenuItem(
+                            value: 0,
+                            child: Text("Home"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 1,
+                            child: Text("Search"),
+                          ),
+                          AdaptiveDropdownMenuItem(
+                            value: 2,
+                            child: Text("Library"),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          context
+                              .read<AppearanceCubit>()
+                              .setDefaultOpenTab(value);
                         },
                       ),
                     ),

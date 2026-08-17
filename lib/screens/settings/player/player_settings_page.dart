@@ -89,6 +89,27 @@ class PlayerSettingsPage extends StatelessWidget {
                     const Padding(
                       padding: EdgeInsets.only(top: 24, bottom: 8, left: 4),
                       child: Text(
+                        "Audio",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+
+                    SettingTile(
+                      title: "Loudness & Equalizer",
+                      subtitle:
+                          "Adjust playback loudness and the 10-band graphic equalizer",
+                      leading: const Icon(Icons.equalizer),
+                      isFirst: true,
+                      isLast: true,
+                      onTap: () => context.go('/settings/player/equalizer'),
+                    ),
+
+                    const Padding(
+                      padding: EdgeInsets.only(top: 24, bottom: 8, left: 4),
+                      child: Text(
                         "Queue",
                         style: TextStyle(
                           fontSize: 14,

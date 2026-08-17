@@ -79,32 +79,17 @@ class MediaPlayer extends ChangeNotifier {
         List<IndexedAudioSource>? sequence,
         int? currentIndex,
         MediaItem? currentItem
-      })> get currentTrackStream => Rx.combineLatest2<
-          List<IndexedAudioSource>?,
-          int?,
-          ({
-            List<IndexedAudioSource>? sequence,
-            int? currentIndex,
-            MediaItem? currentItem
-          })>(
-        _player.sequenceStream,
-        _player.currentIndexStream,
-        (sequence, currentIndex) {
-          MediaItem? currentItem;
-          if (sequence != null &&
-              currentIndex != null &&
-              currentIndex >= 0 &&
-              currentIndex < sequence.length) {
-            final tag = sequence[currentIndex].tag;
-            if (tag is MediaItem) currentItem = tag;
-          }
-          return (
-            sequence: sequence,
-            currentIndex: currentIndex,
-            currentItem: currentItem,
-          );
-        },
-      );
+      })> get currentTrackStream => _player.sequenceStateStream.map((state) {
+        MediaItem? currentItem;
+        final tag = state?.currentSource?.tag;
+        if (tag is MediaItem) currentItem = tag;
+
+        return (
+          sequence: state?.sequence,
+          currentIndex: state?.currentIndex,
+          currentItem: currentItem,
+        );
+      });
 
   Future<void> _init() async {
     await _loadLoudnessEnhancer();
@@ -155,24 +140,48 @@ class MediaPlayer extends ChangeNotifier {
   }
 
   Future<void> _loadEqualizer() async {
-    if (!Platform.isAndroid || _equalizer == null) return;
-    await _equalizer!.setEnabled(GetIt.I<SettingsManager>().equalizerEnabled);
-    _equalizer!.parameters.then((value) async {
-      _equalizerParams ??= value;
-      final List<AndroidEqualizerBand> bands = _equalizerParams!.bands;
-      if (GetIt.I<SettingsManager>().equalizerBandsGain.isEmpty) {
-        GetIt.I<SettingsManager>().equalizerBandsGain =
-            List.generate(bands.length, (index) => 0.0);
-      }
+    if (Platform.isAndroid && _equalizer != null) {
+      await _equalizer!.setEnabled(GetIt.I<SettingsManager>().equalizerEnabled);
+      _equalizer!.parameters.then((value) async {
+        _equalizerParams ??= value;
+        final List<AndroidEqualizerBand> bands = _equalizerParams!.bands;
+        if (GetIt.I<SettingsManager>().equalizerBandsGain.isEmpty) {
+          GetIt.I<SettingsManager>().equalizerBandsGain =
+              List.generate(bands.length, (index) => 0.0);
+        }
 
-      List<double> equalizerBandsGain =
-          GetIt.I<SettingsManager>().equalizerBandsGain;
-      for (var e in bands) {
-        final gain =
-            equalizerBandsGain.isNotEmpty ? equalizerBandsGain[e.index] : 0.0;
-        _equalizerParams!.bands[e.index].setGain(gain);
+        List<double> equalizerBandsGain =
+            GetIt.I<SettingsManager>().equalizerBandsGain;
+        for (var e in bands) {
+          final gain =
+              equalizerBandsGain.isNotEmpty ? equalizerBandsGain[e.index] : 0.0;
+          _equalizerParams!.bands[e.index].setGain(gain);
+        }
+      });
+      return;
+    }
+
+    // Desktop: the Android branch above pushes saved state through
+    // just_audio's AndroidEqualizer API, which doesn't exist here — do the
+    // same job through the platform-agnostic EqualizerBackend instead, so
+    // a previously-saved EQ curve is actually reapplied on next launch
+    // rather than only showing correctly once the settings page is opened.
+    final backend = GetIt.I<EqualizerBackend>();
+    final settings = GetIt.I<SettingsManager>();
+    final savedGains = settings.equalizerBandsGain;
+
+    if (savedGains.isEmpty) {
+      settings.equalizerBandsGain =
+          List.generate(backend.bands.length, (index) => 0.0);
+    } else {
+      for (var i = 0; i < backend.bands.length && i < savedGains.length; i++) {
+        await backend.setBandGain(i, savedGains[i]);
       }
-    });
+    }
+    // Set enabled last: DesktopEqualizer only rebuilds mpv's filter chain
+    // when explicitly enabled, so this applies every restored band gain
+    // in a single pass instead of one filter-chain rebuild per band.
+    await backend.setEnabled(settings.equalizerEnabled);
   }
 
   Future<void> setLoudnessEnabled(bool value) async {

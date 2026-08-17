@@ -38,6 +38,13 @@ class SettingsManager extends ChangeNotifier {
   bool _hidePlayerThumbnail = false;
   // 0 = Animated Gradient, 1 = Solid Color, 2 = Liquid Glass
   int _playerBackgroundStyle = 0;
+  bool _cropAlbumArt = false;
+  // 0 = Default, 1 = Primary color, 2 = Tertiary color
+  int _playerButtonsStyle = 0;
+  // 0 = Left, 1 = Center, 2 = Right
+  int _lyricsTextPosition = 1;
+  // 0 = Home, 1 = Search, 2 = Library
+  int _defaultOpenTab = 0;
   Color? _accentColor;
   bool _amoledBlack = true;
   bool _dynamicColors = false;
@@ -70,6 +77,10 @@ class SettingsManager extends ChangeNotifier {
   double get thumbnailCornerRadius => _thumbnailCornerRadius;
   bool get hidePlayerThumbnail => _hidePlayerThumbnail;
   int get playerBackgroundStyle => _playerBackgroundStyle;
+  bool get cropAlbumArt => _cropAlbumArt;
+  int get playerButtonsStyle => _playerButtonsStyle;
+  int get lyricsTextPosition => _lyricsTextPosition;
+  int get defaultOpenTab => _defaultOpenTab;
 
   Color? get accentColor => _accentColor;
   bool get amoledBlack => _amoledBlack;
@@ -120,6 +131,10 @@ class SettingsManager extends ChangeNotifier {
         _box.get('HIDE_PLAYER_THUMBNAIL', defaultValue: false);
     _playerBackgroundStyle =
         _box.get('PLAYER_BACKGROUND_STYLE', defaultValue: 0);
+    _cropAlbumArt = _box.get('CROP_ALBUM_ART', defaultValue: false);
+    _playerButtonsStyle = _box.get('PLAYER_BUTTONS_STYLE', defaultValue: 0);
+    _lyricsTextPosition = _box.get('LYRICS_TEXT_POSITION', defaultValue: 1);
+    _defaultOpenTab = _box.get('DEFAULT_OPEN_TAB', defaultValue: 0);
     _equalizerEnabled = _box.get('EQUALIZER_ENABLED', defaultValue: false);
     _loudnessEnabled = _box.get('LOUDNESS_ENABLED', defaultValue: false);
     _loudnessTargetGain = _box.get('LOUDNESS_TARGET_GAIN', defaultValue: 0.0);
@@ -248,6 +263,30 @@ class SettingsManager extends ChangeNotifier {
   set playerBackgroundStyle(int value) {
     _box.put('PLAYER_BACKGROUND_STYLE', value);
     _playerBackgroundStyle = value;
+    notifyListeners();
+  }
+
+  set cropAlbumArt(bool value) {
+    _box.put('CROP_ALBUM_ART', value);
+    _cropAlbumArt = value;
+    notifyListeners();
+  }
+
+  set playerButtonsStyle(int value) {
+    _box.put('PLAYER_BUTTONS_STYLE', value);
+    _playerButtonsStyle = value;
+    notifyListeners();
+  }
+
+  set lyricsTextPosition(int value) {
+    _box.put('LYRICS_TEXT_POSITION', value);
+    _lyricsTextPosition = value;
+    notifyListeners();
+  }
+
+  set defaultOpenTab(int value) {
+    _box.put('DEFAULT_OPEN_TAB', value);
+    _defaultOpenTab = value;
     notifyListeners();
   }
 

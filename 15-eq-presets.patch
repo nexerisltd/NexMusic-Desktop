@@ -1,0 +1,207 @@
+diff --git a/lib/screens/settings/player/equalizer/cubit/equalizer_cubit.dart b/lib/screens/settings/player/equalizer/cubit/equalizer_cubit.dart
+index b70e92d..b75b142 100644
+--- a/lib/screens/settings/player/equalizer/cubit/equalizer_cubit.dart
++++ b/lib/screens/settings/player/equalizer/cubit/equalizer_cubit.dart
+@@ -29,4 +29,16 @@ class EqualizerCubit extends Cubit<EqualizerState> {
+ 
+     emit(state.copyWith(bands: updated));
+   }
++
++  /// Applies a full preset: sets every band's gain in one state update
++  /// instead of one emit per band. [gains] must be ordered to match
++  /// [EqualizerState.bands]' index order.
++  void setAllBands(List<double> gains) {
++    final updated = [
++      for (final b in state.bands)
++        if (b.index < gains.length) b.copyWith(gain: gains[b.index]) else b,
++    ];
++
++    emit(state.copyWith(bands: updated));
++  }
+ }
+diff --git a/lib/screens/settings/player/equalizer/eq_presets.dart b/lib/screens/settings/player/equalizer/eq_presets.dart
+new file mode 100644
+index 0000000..97a814f
+--- /dev/null
++++ b/lib/screens/settings/player/equalizer/eq_presets.dart
+@@ -0,0 +1,42 @@
++/// 10-band EQ preset curves, ordered to match the app's band frequencies
++/// (31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 Hz).
++///
++/// Values are ported directly from NexMusic-Android's
++/// `ui/screens/equalizer/axion/AxionEqScreen.kt` (its `echoPresets`,
++/// `dolbyPresets`, and `diracPresets` lists), converting millibels to
++/// decibels (divide by 100) so they line up with this app's
++/// `EqualizerBackend.minDecibels`/`maxDecibels` range.
++class EqPreset {
++  final String name;
++  final List<double> gains;
++
++  const EqPreset(this.name, this.gains);
++}
++
++class EqPresets {
++  static const List<EqPreset> echoSignature = [
++    EqPreset('Flat', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
++    EqPreset('Signature', [1.5, 1.0, 0.5, 0.0, -0.2, 0.0, 0.8, 1.5, 2.0, 1.5]),
++    EqPreset('Acoustic', [1.5, 1.5, 0.5, 0.75, 1.0, 0.75, 1.25, 1.75, 1.5, 0.75]),
++    EqPreset('Bass Boost', [5.0, 4.0, 2.5, 1.0, 0.0, -0.5, 0.0, 1.0, 2.0, 3.0]),
++    EqPreset('Pure Clarity', [-1.0, -0.5, 0.0, 0.5, 1.5, 2.5, 3.0, 2.5, 1.5, 1.0]),
++    EqPreset('Soft Bass', [2.0, 1.8, 1.4, 0.8, 0.3, 0.2, 0.6, 0.9, 1.1, 1.3]),
++    EqPreset('Electronic', [3.5, 2.8, 1.2, -0.5, -1.5, 0.5, 1.8, 3.0, 4.0, 5.0]),
++    EqPreset('Rock', [3.0, 2.2, 1.5, 0.5, -1.0, 1.2, 2.0, 2.5, 3.2, 3.8]),
++    EqPreset('Pop', [-1.5, 0.0, 1.0, 1.8, 2.5, 2.2, 1.5, 0.8, -0.5, -1.2]),
++    EqPreset('Jazz', [1.5, 1.0, 0.6, 1.4, 2.0, 1.8, 1.2, 1.8, 2.2, 2.0]),
++    EqPreset('Voice', [-2.5, -1.5, 0.0, 2.0, 4.0, 3.8, 2.0, 1.2, 0.0, -1.2]),
++  ];
++
++  static const List<EqPreset> dolbyAtmos = [
++    EqPreset('Dolby Open', [1.5, 1.8, 2.2, 1.8, 1.6, 2.1, 2.5, 2.8, 1.8, 0.8]),
++    EqPreset('Dolby Rich', [1.0, 1.6, 2.0, 2.2, 2.8, 2.6, 2.4, 2.0, 1.5, 0.5]),
++    EqPreset('Dolby Focused', [-3.0, -0.5, 1.3, 1.8, 2.2, 1.2, 1.4, 1.0, -0.5, -3.0]),
++  ];
++
++  static const List<EqPreset> diracAudio = [
++    EqPreset('Dirac Music', [2.0, 1.4, 0.8, 0.0, 0.3, 0.8, 1.4, 2.0, 2.8, 3.5]),
++    EqPreset('Dirac Movie', [3.0, 2.5, 1.5, 0.0, 0.7, 1.2, 1.8, 2.5, 3.2, 4.0]),
++    EqPreset('Dirac Game', [1.5, 2.5, 2.0, 0.0, 0.8, 1.5, 3.0, 4.5, 4.0, 2.8]),
++  ];
++}
+diff --git a/lib/screens/settings/player/equalizer/equalizer_page.dart b/lib/screens/settings/player/equalizer/equalizer_page.dart
+index 8b53396..72153e9 100644
+--- a/lib/screens/settings/player/equalizer/equalizer_page.dart
++++ b/lib/screens/settings/player/equalizer/equalizer_page.dart
+@@ -13,6 +13,7 @@ import 'package:nexmusic/themes/text_styles.dart';
+ import 'package:nexmusic/utils/adaptive_widgets/slider.dart';
+ import 'package:just_audio/just_audio.dart';
+ import '../../../../services/equalizer_backend.dart';
++import 'eq_presets.dart';
+ import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
+ 
+ class EqualizerPage extends StatelessWidget {
+@@ -70,6 +71,48 @@ class EqualizerPage extends StatelessWidget {
+ class _EqualizerView extends StatelessWidget {
+   const _EqualizerView();
+ 
++  Future<void> _applyPreset(BuildContext context, List<double> gains) async {
++    final settings = GetIt.I<SettingsManager>();
++    context.read<EqualizerCubit>().setAllBands(gains);
++    settings.equalizerBandsGain = List<double>.from(gains);
++    await GetIt.I<EqualizerBackend>().setAllBands(gains);
++  }
++
++  Widget _presetSection(
++    BuildContext context,
++    String title,
++    List<EqPreset> presets,
++  ) {
++    return Padding(
++      padding: const EdgeInsets.only(bottom: 12),
++      child: Column(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          Padding(
++            padding: const EdgeInsets.only(left: 4, bottom: 6),
++            child: Text(
++              title,
++              style: Theme.of(context).textTheme.titleSmall?.copyWith(
++                    color: Theme.of(context).colorScheme.primary,
++                  ),
++            ),
++          ),
++          Wrap(
++            spacing: 8,
++            runSpacing: 8,
++            children: [
++              for (final preset in presets)
++                ActionChip(
++                  label: Text(preset.name),
++                  onPressed: () => _applyPreset(context, preset.gains),
++                ),
++            ],
++          ),
++        ],
++      ),
++    );
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     final mediaPlayer = GetIt.I<MediaPlayer>();
+@@ -143,7 +186,14 @@ class _EqualizerView extends StatelessWidget {
+               builder: (context, state) {
+                 if (!state.enabled) return const SizedBox();
+ 
+-                return SizedBox(
++                return Column(
++                  crossAxisAlignment: CrossAxisAlignment.start,
++                  children: [
++                    _presetSection(context, 'Echo Signature', EqPresets.echoSignature),
++                    _presetSection(context, 'Dolby Atmos', EqPresets.dolbyAtmos),
++                    _presetSection(context, 'Dirac Audio', EqPresets.diracAudio),
++                    const SizedBox(height: 8),
++                    SizedBox(
+                   height: 250,
+                   child: Row(
+                     children: [
+@@ -177,6 +227,8 @@ class _EqualizerView extends StatelessWidget {
+                         ),
+                     ],
+                   ),
++                    ),
++                  ],
+                 );
+               },
+             ),
+diff --git a/lib/services/android_equalizer_adapter.dart b/lib/services/android_equalizer_adapter.dart
+index 2b658f3..45541f6 100644
+--- a/lib/services/android_equalizer_adapter.dart
++++ b/lib/services/android_equalizer_adapter.dart
+@@ -45,4 +45,13 @@ class AndroidEqualizerAdapter implements EqualizerBackend {
+     _parameters = params;
+     await params.bands[index].setGain(gain);
+   }
++
++  @override
++  Future<void> setAllBands(List<double> gains) async {
++    final params = _parameters ?? await androidEqualizer.parameters;
++    _parameters = params;
++    for (var i = 0; i < params.bands.length && i < gains.length; i++) {
++      await params.bands[i].setGain(gains[i]);
++    }
++  }
+ }
+diff --git a/lib/services/desktop_equalizer.dart b/lib/services/desktop_equalizer.dart
+index 61d8327..20e72ee 100644
+--- a/lib/services/desktop_equalizer.dart
++++ b/lib/services/desktop_equalizer.dart
+@@ -47,6 +47,14 @@ class DesktopEqualizer implements EqualizerBackend {
+     if (_enabled) await _apply();
+   }
+ 
++  @override
++  Future<void> setAllBands(List<double> gains) async {
++    for (var i = 0; i < _bands.length && i < gains.length; i++) {
++      _bands[i].gain = gains[i].clamp(minDecibels, maxDecibels);
++    }
++    if (_enabled) await _apply();
++  }
++
+   /// Builds an ffmpeg/mpv `equalizer` filter chain from the current band
+   /// gains. Bands left at 0dB are skipped entirely rather than included
+   /// as a no-op peaking filter, keeping the chain short when only a few
+diff --git a/lib/services/equalizer_backend.dart b/lib/services/equalizer_backend.dart
+index 64cb785..e0e00e4 100644
+--- a/lib/services/equalizer_backend.dart
++++ b/lib/services/equalizer_backend.dart
+@@ -21,4 +21,10 @@ abstract class EqualizerBackend {
+ 
+   Future<void> setEnabled(bool enabled);
+   Future<void> setBandGain(int index, double gain);
++
++  /// Sets every band's gain at once (e.g. applying a preset), rebuilding
++  /// the underlying audio effect only once instead of once per band.
++  /// [gains] must be the same length as [bands]; extra values are
++  /// ignored, missing ones leave that band unchanged.
++  Future<void> setAllBands(List<double> gains);
+ }

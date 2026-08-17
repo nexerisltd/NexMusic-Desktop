@@ -11,6 +11,7 @@ import 'package:nexmusic/screens/library/downloads/downloading/downloading_page.
 import 'package:nexmusic/screens/library/downloads/downloads_page.dart';
 import 'package:nexmusic/screens/library/downloads/playlist/download_playlist_page.dart';
 import 'package:nexmusic/screens/library/favourites/favourites_page.dart';
+import 'package:nexmusic/screens/library/local_media/local_media_page.dart';
 import 'package:nexmusic/screens/library/history/history_page.dart';
 import 'package:nexmusic/screens/library/library_page.dart';
 import 'package:nexmusic/screens/library/playlist/playlist_details_page.dart';
@@ -28,9 +29,24 @@ import 'package:nexmusic/screens/settings/privacy/privacy_page.dart';
 import 'package:nexmusic/screens/settings/services/yt_music/yt_music_page.dart';
 import 'package:nexmusic/screens/settings/settings_page.dart';
 import 'package:nexmusic/screens/shell/app_shell.dart';
+import 'package:nexmusic/services/settings_manager.dart';
+import 'package:get_it/get_it.dart';
+
+/// Maps the `defaultOpenTab` setting (0=Home, 1=Search, 2=Library) to the
+/// route NexMusic should land on at startup.
+String _initialLocationFromSettings() {
+  switch (GetIt.I<SettingsManager>().defaultOpenTab) {
+    case 1:
+      return '/search';
+    case 2:
+      return '/saved';
+    default:
+      return '/';
+  }
+}
 
 GoRouter router = GoRouter(
-  initialLocation: '/',
+  initialLocation: _initialLocationFromSettings(),
   routes: [
     ShellRoute(
       builder: (context, state, child) => child,
@@ -132,6 +148,10 @@ List<StatefulShellBranch> branches = [
         GoRoute(
           path: 'favourites_page',
           builder: (context, state) => const FavouritesPage(),
+        ),
+        GoRoute(
+          path: 'local_files_page',
+          builder: (context, state) => const LocalMediaPage(),
         ),
         GoRoute(
           path: 'downloads_page',

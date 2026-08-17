@@ -1,0 +1,180 @@
+diff --git a/lib/screens/player/player_page.dart b/lib/screens/player/player_page.dart
+index f660188..07dc16e 100644
+--- a/lib/screens/player/player_page.dart
++++ b/lib/screens/player/player_page.dart
+@@ -1,3 +1,4 @@
++import 'dart:async';
+ import 'dart:io';
+ import 'dart:math';
+ import 'dart:ui';
+@@ -22,6 +23,7 @@ import 'widgets/animated_gradient_bg.dart';
+ import '../../generated/l10n.dart';
+ import '../../services/download_manager.dart';
+ import '../../services/media_player.dart';
++import '../../services/ytmusic_auth.dart';
+ import '../../themes/colors.dart';
+ import '../../themes/dark.dart';
+ import '../../themes/text_styles.dart';
+@@ -514,16 +516,35 @@ class _PlayerPageState extends State<PlayerPage> {
+                         : Colors.redAccent,
+                   ),
+                   onPressed: () async {
++                    final videoId = currentSong!.extras!['videoId'];
++                    final isRealYtSong = videoId != null &&
++                        !videoId.toString().startsWith('local_');
+                     if (item == null) {
+                       await Hive.box('FAVOURITES').put(
+-                        currentSong!.extras!['videoId'],
++                        videoId,
+                         {
+                           ...currentSong!.extras!,
+                           'createdAt': DateTime.now().millisecondsSinceEpoch
+                         },
+                       );
++                      if (isRealYtSong &&
++                          GetIt.I<YTMusicAuthService>().isSignedIn) {
++                        // Best-effort: don't block the UI or surface an
++                        // error if this fails, same as the local toggle
++                        // above already completed successfully.
++                        unawaited(
++                          GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
++                        );
++                      }
+                     } else {
+-                      await value.delete(currentSong!.extras!['videoId']);
++                      await value.delete(videoId);
++                      if (isRealYtSong &&
++                          GetIt.I<YTMusicAuthService>().isSignedIn) {
++                        unawaited(
++                          GetIt.I<YTMusic>()
++                              .rateSong(videoId, rating: 'INDIFFERENT'),
++                        );
++                      }
+                     }
+                   },
+                 );
+diff --git a/lib/utils/bottom_modals.dart b/lib/utils/bottom_modals.dart
+index 73e29c4..faa5e2e 100644
+--- a/lib/utils/bottom_modals.dart
++++ b/lib/utils/bottom_modals.dart
+@@ -1,3 +1,4 @@
++import 'dart:async';
+ import 'dart:io';
+ import 'dart:math';
+ import 'dart:ui';
+@@ -23,6 +24,8 @@ import '../services/download_manager.dart';
+ import '../services/library.dart';
+ import '../services/media_player.dart';
+ import '../services/settings_manager.dart';
++import '../services/ytmusic_auth.dart';
++import '../ytmusic/ytmusic.dart';
+ import '../themes/colors.dart';
+ import '../themes/text_styles.dart';
+ import 'adaptive_widgets/adaptive_widgets.dart';
+@@ -1250,16 +1253,32 @@ BottomModalLayout _songBottomModal(BuildContext context, Map song) {
+                     : AdaptiveIcons.heart_fill),
+                 onTap: () async {
+                   Navigator.pop(context);
++                  final videoId = song['videoId'];
++                  final isRealYtSong =
++                      videoId != null && !videoId.toString().startsWith('local_');
+                   if (item == null) {
+                     await Hive.box('FAVOURITES').put(
+-                      song['videoId'],
++                      videoId,
+                       {
+                         ...song,
+                         'createdAt': DateTime.now().millisecondsSinceEpoch
+                       },
+                     );
++                    if (isRealYtSong &&
++                        GetIt.I<YTMusicAuthService>().isSignedIn) {
++                      unawaited(
++                        GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
++                      );
++                    }
+                   } else {
+-                    await value.delete(song['videoId']);
++                    await value.delete(videoId);
++                    if (isRealYtSong &&
++                        GetIt.I<YTMusicAuthService>().isSignedIn) {
++                      unawaited(
++                        GetIt.I<YTMusic>()
++                            .rateSong(videoId, rating: 'INDIFFERENT'),
++                      );
++                    }
+                   }
+                 },
+               );
+@@ -2281,16 +2300,32 @@ errorWidget: (context, url, error) => const Icon(Icons.music_note),
+                   : S.of(context).Remove_From_Favourites,
+               onTap: () async {
+                 Navigator.pop(context);
++                final videoId = song['videoId'];
++                final isRealYtSong =
++                    videoId != null && !videoId.toString().startsWith('local_');
+                 if (item == null) {
+                   await Hive.box('FAVOURITES').put(
+-                    song['videoId'],
++                    videoId,
+                     {
+                       ...song,
+                       'createdAt': DateTime.now().millisecondsSinceEpoch
+                     },
+                   );
++                  if (isRealYtSong &&
++                      GetIt.I<YTMusicAuthService>().isSignedIn) {
++                    unawaited(
++                      GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
++                    );
++                  }
+                 } else {
+-                  await value.delete(song['videoId']);
++                  await value.delete(videoId);
++                  if (isRealYtSong &&
++                      GetIt.I<YTMusicAuthService>().isSignedIn) {
++                    unawaited(
++                      GetIt.I<YTMusic>()
++                          .rateSong(videoId, rating: 'INDIFFERENT'),
++                    );
++                  }
+                 }
+               },
+             );
+diff --git a/lib/ytmusic/mixins/library.dart b/lib/ytmusic/mixins/library.dart
+index 16d9dc8..cabc5d0 100644
+--- a/lib/ytmusic/mixins/library.dart
++++ b/lib/ytmusic/mixins/library.dart
+@@ -4,6 +4,32 @@ import '../helpers.dart';
+ import 'utils.dart';
+ 
+ mixin LibraryMixin on YTClient {
++  /// Rates a song ("thumbs up"/"thumbs down" on YouTube Music).
++  /// [rating] is one of 'LIKE', 'DISLIKE', 'INDIFFERENT' — 'INDIFFERENT'
++  /// removes any existing rating (used when un-liking a song locally, so
++  /// the like doesn't linger on the YT Music account).
++  ///
++  /// Silently returns null on failure (e.g. not signed in, or offline) —
++  /// this mirrors the Android app's behaviour of syncing likes best-effort
++  /// without blocking or erroring the local favourite toggle.
++  Future<Map?> rateSong(String videoId, {String rating = 'INDIFFERENT'}) async {
++    const endpoints = {
++      'LIKE': 'like/like',
++      'DISLIKE': 'like/dislike',
++      'INDIFFERENT': 'like/removelike',
++    };
++    final endpoint = endpoints[rating];
++    if (endpoint == null) return null;
++
++    try {
++      return await sendRequest(endpoint, {
++        'target': {'videoId': videoId},
++      });
++    } catch (e) {
++      return null;
++    }
++  }
++
+   Future<Map> getLibrarySongs({String? continuationParams}) async {
+     Map<String, dynamic> body = {'browseId': 'FEmusic_liked_videos'};
+ 

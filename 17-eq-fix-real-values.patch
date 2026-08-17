@@ -1,0 +1,144 @@
+diff --git a/lib/screens/settings/player/equalizer/eq_presets.dart b/lib/screens/settings/player/equalizer/eq_presets.dart
+index 97a814f..946f41f 100644
+--- a/lib/screens/settings/player/equalizer/eq_presets.dart
++++ b/lib/screens/settings/player/equalizer/eq_presets.dart
+@@ -1,11 +1,10 @@
+ /// 10-band EQ preset curves, ordered to match the app's band frequencies
+ /// (31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 Hz).
+ ///
+-/// Values are ported directly from NexMusic-Android's
+-/// `ui/screens/equalizer/axion/AxionEqScreen.kt` (its `echoPresets`,
+-/// `dolbyPresets`, and `diracPresets` lists), converting millibels to
+-/// decibels (divide by 100) so they line up with this app's
+-/// `EqualizerBackend.minDecibels`/`maxDecibels` range.
++/// Values verified directly against NexMusic-Android's live Equalizer
++/// screen (screenshots of each preset's slider values), not just its
++/// source code — the source's raw numbers needed a x10 scale correction
++/// to match what the app actually applies.
+ class EqPreset {
+   final String name;
+   final List<double> gains;
+@@ -14,29 +13,29 @@ class EqPreset {
+ }
+ 
+ class EqPresets {
+-  static const List<EqPreset> echoSignature = [
++  static const List<EqPreset> nexSignature = [
+     EqPreset('Flat', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+-    EqPreset('Signature', [1.5, 1.0, 0.5, 0.0, -0.2, 0.0, 0.8, 1.5, 2.0, 1.5]),
+-    EqPreset('Acoustic', [1.5, 1.5, 0.5, 0.75, 1.0, 0.75, 1.25, 1.75, 1.5, 0.75]),
+-    EqPreset('Bass Boost', [5.0, 4.0, 2.5, 1.0, 0.0, -0.5, 0.0, 1.0, 2.0, 3.0]),
+-    EqPreset('Pure Clarity', [-1.0, -0.5, 0.0, 0.5, 1.5, 2.5, 3.0, 2.5, 1.5, 1.0]),
+-    EqPreset('Soft Bass', [2.0, 1.8, 1.4, 0.8, 0.3, 0.2, 0.6, 0.9, 1.1, 1.3]),
+-    EqPreset('Electronic', [3.5, 2.8, 1.2, -0.5, -1.5, 0.5, 1.8, 3.0, 4.0, 5.0]),
+-    EqPreset('Rock', [3.0, 2.2, 1.5, 0.5, -1.0, 1.2, 2.0, 2.5, 3.2, 3.8]),
+-    EqPreset('Pop', [-1.5, 0.0, 1.0, 1.8, 2.5, 2.2, 1.5, 0.8, -0.5, -1.2]),
+-    EqPreset('Jazz', [1.5, 1.0, 0.6, 1.4, 2.0, 1.8, 1.2, 1.8, 2.2, 2.0]),
+-    EqPreset('Voice', [-2.5, -1.5, 0.0, 2.0, 4.0, 3.8, 2.0, 1.2, 0.0, -1.2]),
++    EqPreset('Signature', [15, 10, 5, 0, -2, 0, 8, 15, 20, 15]),
++    EqPreset('Acoustic', [15, 15, 5, 7.5, 10, 7.5, 12.5, 17.5, 15, 7.5]),
++    EqPreset('Bass Boost', [50, 40, 25, 10, 0, -5, 0, 10, 20, 30]),
++    EqPreset('Pure Clarity', [-10, -5, 0, 5, 15, 25, 30, 25, 15, 10]),
++    EqPreset('Soft Bass', [20, 18, 14, 8, 3, 2, 6, 9, 11, 13]),
++    EqPreset('Electronic', [35, 28, 12, -5, -15, 5, 18, 30, 40, 50]),
++    EqPreset('Rock', [30, 22, 15, 5, -10, 12, 20, 25, 32, 38]),
++    EqPreset('Pop', [-15, 0, 10, 18, 25, 22, 15, 8, -5, -12]),
++    EqPreset('Jazz', [15, 10, 6, 14, 20, 18, 12, 18, 22, 20]),
++    EqPreset('Voice', [-25, -15, 0, 20, 40, 38, 20, 12, 0, -12]),
+   ];
+ 
+   static const List<EqPreset> dolbyAtmos = [
+-    EqPreset('Dolby Open', [1.5, 1.8, 2.2, 1.8, 1.6, 2.1, 2.5, 2.8, 1.8, 0.8]),
+-    EqPreset('Dolby Rich', [1.0, 1.6, 2.0, 2.2, 2.8, 2.6, 2.4, 2.0, 1.5, 0.5]),
+-    EqPreset('Dolby Focused', [-3.0, -0.5, 1.3, 1.8, 2.2, 1.2, 1.4, 1.0, -0.5, -3.0]),
++    EqPreset('Dolby Open', [15, 18, 22, 18, 16, 21, 25, 28, 18, 8]),
++    EqPreset('Dolby Rich', [10, 16, 20, 22, 28, 26, 24, 20, 15, 5]),
++    EqPreset('Dolby Focused', [-30, -5, 13, 18, 22, 12, 14, 10, -5, -30]),
+   ];
+ 
+   static const List<EqPreset> diracAudio = [
+-    EqPreset('Dirac Music', [2.0, 1.4, 0.8, 0.0, 0.3, 0.8, 1.4, 2.0, 2.8, 3.5]),
+-    EqPreset('Dirac Movie', [3.0, 2.5, 1.5, 0.0, 0.7, 1.2, 1.8, 2.5, 3.2, 4.0]),
+-    EqPreset('Dirac Game', [1.5, 2.5, 2.0, 0.0, 0.8, 1.5, 3.0, 4.5, 4.0, 2.8]),
++    EqPreset('Dirac Music', [20, 14, 8, 0, 3, 8, 14, 20, 28, 35]),
++    EqPreset('Dirac Movie', [30, 25, 15, 0, 7, 12, 18, 25, 32, 40]),
++    EqPreset('Dirac Game', [15, 25, 20, 0, 8, 15, 30, 45, 40, 28]),
+   ];
+ }
+diff --git a/lib/screens/settings/player/equalizer/equalizer_page.dart b/lib/screens/settings/player/equalizer/equalizer_page.dart
+index 72153e9..a729bf4 100644
+--- a/lib/screens/settings/player/equalizer/equalizer_page.dart
++++ b/lib/screens/settings/player/equalizer/equalizer_page.dart
+@@ -78,10 +78,19 @@ class _EqualizerView extends StatelessWidget {
+     await GetIt.I<EqualizerBackend>().setAllBands(gains);
+   }
+ 
++  bool _matchesPreset(List<EqBand> bands, List<double> presetGains) {
++    if (bands.length != presetGains.length) return false;
++    for (var i = 0; i < bands.length; i++) {
++      if ((bands[i].gain - presetGains[i]).abs() > 0.01) return false;
++    }
++    return true;
++  }
++
+   Widget _presetSection(
+     BuildContext context,
+     String title,
+     List<EqPreset> presets,
++    List<EqBand> currentBands,
+   ) {
+     return Padding(
+       padding: const EdgeInsets.only(bottom: 12),
+@@ -102,9 +111,20 @@ class _EqualizerView extends StatelessWidget {
+             runSpacing: 8,
+             children: [
+               for (final preset in presets)
+-                ActionChip(
++                FilterChip(
+                   label: Text(preset.name),
+-                  onPressed: () => _applyPreset(context, preset.gains),
++                  selected: _matchesPreset(currentBands, preset.gains),
++                  showCheckmark: false,
++                  selectedColor: Theme.of(context).colorScheme.primary,
++                  labelStyle: TextStyle(
++                    color: _matchesPreset(currentBands, preset.gains)
++                        ? Theme.of(context).colorScheme.onPrimary
++                        : null,
++                    fontWeight: _matchesPreset(currentBands, preset.gains)
++                        ? FontWeight.bold
++                        : null,
++                  ),
++                  onSelected: (_) => _applyPreset(context, preset.gains),
+                 ),
+             ],
+           ),
+@@ -189,9 +209,9 @@ class _EqualizerView extends StatelessWidget {
+                 return Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+-                    _presetSection(context, 'Echo Signature', EqPresets.echoSignature),
+-                    _presetSection(context, 'Dolby Atmos', EqPresets.dolbyAtmos),
+-                    _presetSection(context, 'Dirac Audio', EqPresets.diracAudio),
++                    _presetSection(context, 'Nex Signature', EqPresets.nexSignature, state.bands),
++                    _presetSection(context, 'Dolby Atmos', EqPresets.dolbyAtmos, state.bands),
++                    _presetSection(context, 'Dirac Audio', EqPresets.diracAudio, state.bands),
+                     const SizedBox(height: 8),
+                     SizedBox(
+                   height: 250,
+diff --git a/lib/services/desktop_equalizer.dart b/lib/services/desktop_equalizer.dart
+index 20e72ee..4eee521 100644
+--- a/lib/services/desktop_equalizer.dart
++++ b/lib/services/desktop_equalizer.dart
+@@ -27,10 +27,10 @@ class DesktopEqualizer implements EqualizerBackend {
+   DesktopEqualizer(this.audioPlayer);
+ 
+   @override
+-  double get minDecibels => -12.0;
++  double get minDecibels => -30.0;
+ 
+   @override
+-  double get maxDecibels => 12.0;
++  double get maxDecibels => 50.0;
+ 
+   @override
+   List<EqBandInfo> get bands => _bands;

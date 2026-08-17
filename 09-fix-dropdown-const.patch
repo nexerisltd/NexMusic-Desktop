@@ -1,0 +1,31 @@
+diff --git a/lib/screens/settings/appearance/appearance_page.dart b/lib/screens/settings/appearance/appearance_page.dart
+index 047c038..f10dba6 100644
+--- a/lib/screens/settings/appearance/appearance_page.dart
++++ b/lib/screens/settings/appearance/appearance_page.dart
+@@ -157,7 +157,7 @@ class AppearancePage extends StatelessWidget {
+                       isLast: true,
+                       trailing: AdaptiveDropdownButton<int>(
+                         value: s.lyricsTextPosition,
+-                        items: const [
++                        items: [
+                           AdaptiveDropdownMenuItem(
+                             value: 0,
+                             child: Text("Left"),
+@@ -263,7 +263,7 @@ class AppearancePage extends StatelessWidget {
+                       isLast: true,
+                       trailing: AdaptiveDropdownButton<int>(
+                         value: s.playerButtonsStyle,
+-                        items: const [
++                        items: [
+                           AdaptiveDropdownMenuItem(
+                             value: 0,
+                             child: Text("Default"),
+@@ -296,7 +296,7 @@ class AppearancePage extends StatelessWidget {
+                       isLast: true,
+                       trailing: AdaptiveDropdownButton<int>(
+                         value: s.defaultOpenTab,
+-                        items: const [
++                        items: [
+                           AdaptiveDropdownMenuItem(
+                             value: 0,
+                             child: Text("Home"),

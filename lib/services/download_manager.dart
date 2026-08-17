@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:collection';
 import 'package:collection/collection.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:nexmusic/ytmusic/ytmusic.dart';
@@ -140,6 +142,12 @@ class DownloadManager {
             }
           }
     };
+
+    // Best-effort: pin the cover art to the disk cache now, while online,
+    // so it's still there once this song is played offline. Never blocks
+    // or fails the actual download if the thumbnail fetch fails.
+    unawaited(_precacheThumbnail(song));
+
     // Check downloaded songs
     final Map? downloadSong = _box.get(song['videoId']);
     if (downloadSong != null) {
@@ -172,6 +180,42 @@ class DownloadManager {
     await _downloadSong(song);
     _downloadEnd(song);
     _downloadNext();
+  }
+
+  /// Downloads the song's largest-available thumbnail into
+  /// cached_network_image's disk cache ahead of time, so `SongThumbnail`
+  /// (which uses the same cache) can show it offline later without ever
+  /// needing a live network fetch. Failures are swallowed — a missing
+  /// offline cover shouldn't be treated as a failed download.
+  Future<void> _precacheThumbnail(Map song) async {
+    try {
+      final thumbnails = song['thumbnails'];
+      if (thumbnails is! List || thumbnails.isEmpty) return;
+      final url = thumbnails.last['url'];
+      if (url == null || url.toString().isEmpty) return;
+
+      final provider = CachedNetworkImageProvider(url.toString());
+      final stream = provider.resolve(const ImageConfiguration());
+      final completer = Completer<void>();
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (image, synchronousCall) {
+          if (!completer.isCompleted) completer.complete();
+          stream.removeListener(listener);
+        },
+        onError: (error, stackTrace) {
+          if (!completer.isCompleted) completer.complete();
+          stream.removeListener(listener);
+        },
+      );
+      stream.addListener(listener);
+      await completer.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {},
+      );
+    } catch (_) {
+      // Ignore — this is purely a best-effort pre-cache.
+    }
   }
 
   Future<void> _downloadSong(Map song) async {
@@ -326,8 +370,11 @@ class DownloadManager {
       {String quality = 'high'}) async {
     try {
       StreamManifest manifest = await ytExplode.videos.streamsClient
-          .getManifest(videoId,
-              requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
+          .getManifest(
+        videoId,
+        requireWatchPage: true,
+        ytClients: [YoutubeApiClient.androidVr],
+      );
       List<AudioOnlyStreamInfo> streamInfos = manifest.audioOnly
           .where((a) => a.container == StreamContainer.mp4)
           .sortByBitrate()

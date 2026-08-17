@@ -14,6 +14,7 @@ class LibraryLoaded extends LibraryState {
   final int favouritesCount;
   final int downloadsCount;
   final int historyCount;
+  final int localFilesCount;
   final List<Map<String, dynamic>> ytMusicPlaylists;
 
   const LibraryLoaded({
@@ -21,6 +22,7 @@ class LibraryLoaded extends LibraryState {
     required this.favouritesCount,
     required this.downloadsCount,
     required this.historyCount,
+    this.localFilesCount = 0,
     this.ytMusicPlaylists = const [],
   });
 }

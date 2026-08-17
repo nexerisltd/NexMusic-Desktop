@@ -1,14 +1,18 @@
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+
 import 'equalizer_backend.dart';
 
 /// 10-band ISO graphic equalizer for Windows/Linux/macOS, implemented by
 /// setting mpv's `af` (audio filter) property through media_kit's
-/// underlying native player. just_audio_media_kit exposes the raw
-/// media_kit Player for a given AudioPlayer via `JustAudioMediaKit.player`.
+/// underlying native player.
 ///
-/// NOTE: if your installed just_audio_media_kit version doesn't expose
-/// `player(playerId)` under that exact name, check its README — the mpv
-/// property call itself (`setProperty('af', ...)`) is the stable part.
+/// Reaching that underlying player requires two small local additions to
+/// the vendored `packages/just_audio_media_kit` copy — see that package's
+/// CHANGELOG.md for exactly what was added and why (upstream keeps its
+/// player registry entirely private, which is what kept this equalizer
+/// from ever applying a real audio effect before).
 class DesktopEqualizer implements EqualizerBackend {
   final AudioPlayer audioPlayer;
   bool _enabled = false;
@@ -23,10 +27,10 @@ class DesktopEqualizer implements EqualizerBackend {
   DesktopEqualizer(this.audioPlayer);
 
   @override
-  double get minDecibels => -12.0;
+  double get minDecibels => -30.0;
 
   @override
-  double get maxDecibels => 12.0;
+  double get maxDecibels => 50.0;
 
   @override
   List<EqBandInfo> get bands => _bands;
@@ -43,8 +47,50 @@ class DesktopEqualizer implements EqualizerBackend {
     if (_enabled) await _apply();
   }
 
+  @override
+  Future<void> setAllBands(List<double> gains) async {
+    for (var i = 0; i < _bands.length && i < gains.length; i++) {
+      _bands[i].gain = gains[i].clamp(minDecibels, maxDecibels);
+    }
+    if (_enabled) await _apply();
+  }
+
+  /// Builds an ffmpeg/mpv `equalizer` filter chain from the current band
+  /// gains. Bands left at 0dB are skipped entirely rather than included
+  /// as a no-op peaking filter, keeping the chain short when only a few
+  /// bands are adjusted.
+  String _buildFilterChain() {
+    if (_bands.every((b) => b.gain == 0)) return '';
+
+    // Some presets boost several bands by +30/+40dB, which would clip
+    // hard. Rather than depend on a limiter filter (mpv builds vary in
+    // which optional ffmpeg filters are compiled in — `alimiter` isn't
+    // present here and an unknown filter makes mpv reject the *entire*
+    // af string, briefly killing audio output entirely), scale every
+    // band down by the same amount whenever the loudest band would
+    // exceed a safe peak, preserving the preset's relative shape.
+    const safePeakDb = 12.0;
+    final maxGain = _bands.map((b) => b.gain).reduce((a, b) => a > b ? a : b);
+    final headroom = maxGain > safePeakDb ? maxGain - safePeakDb : 0.0;
+
+    final segments = <String>[
+      for (final band in _bands)
+        if (band.gain != 0)
+          'equalizer=f=${band.centerFrequency.round()}'
+          ':width_type=o:width=1'
+          ':g=${(band.gain - headroom).toStringAsFixed(2)}',
+    ];
+    return segments.join(',');
+  }
+
   Future<void> _apply() async {
-    // just_audio_media_kit 2.x no longer exposes its underlying media_kit
-    // player. Keep EQ state in the UI until a supported public API is added.
+    final platform = JustAudioPlatform.instance;
+    if (platform is! JustAudioMediaKit) return;
+
+    final player = platform.currentPlayer;
+    if (player == null) return;
+
+    final chain = _enabled ? _buildFilterChain() : '';
+    await player.setMpvProperty('af', chain);
   }
 }

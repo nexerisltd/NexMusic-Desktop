@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -22,6 +23,7 @@ import 'widgets/animated_gradient_bg.dart';
 import '../../generated/l10n.dart';
 import '../../services/download_manager.dart';
 import '../../services/media_player.dart';
+import '../../services/ytmusic_auth.dart';
 import '../../themes/colors.dart';
 import '../../themes/dark.dart';
 import '../../themes/text_styles.dart';
@@ -310,8 +312,9 @@ class _PlayerPageState extends State<PlayerPage> {
                                                                   : SongThumbnail(
                                                                 song: currentSong!
                                                                     .extras!,
-                                                                fit: BoxFit
-                                                                    .cover,
+                                                                fit: GetIt.I<SettingsManager>().cropAlbumArt
+                                                                    ? BoxFit.cover
+                                                                    : BoxFit.contain,
                                                                 onImageReady:
                                                                     updateBackgroundColor,
                                                               ),
@@ -418,7 +421,9 @@ class _PlayerPageState extends State<PlayerPage> {
                                                     BorderRadius.circular(12),
                                                 child: SongThumbnail(
                                                   song: currentSong!.extras!,
-                                                  fit: BoxFit.cover,
+                                                  fit: GetIt.I<SettingsManager>().cropAlbumArt
+                                                      ? BoxFit.cover
+                                                      : BoxFit.contain,
                                                   onImageReady:
                                                       updateBackgroundColor,
                                                 ),
@@ -511,16 +516,35 @@ class _PlayerPageState extends State<PlayerPage> {
                         : Colors.redAccent,
                   ),
                   onPressed: () async {
+                    final videoId = currentSong!.extras!['videoId'];
+                    final isRealYtSong = videoId != null &&
+                        !videoId.toString().startsWith('local_');
                     if (item == null) {
                       await Hive.box('FAVOURITES').put(
-                        currentSong!.extras!['videoId'],
+                        videoId,
                         {
                           ...currentSong!.extras!,
                           'createdAt': DateTime.now().millisecondsSinceEpoch
                         },
                       );
+                      if (isRealYtSong &&
+                          GetIt.I<YTMusicAuthService>().isSignedIn) {
+                        // Best-effort: don't block the UI or surface an
+                        // error if this fails, same as the local toggle
+                        // above already completed successfully.
+                        unawaited(
+                          GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
+                        );
+                      }
                     } else {
-                      await value.delete(currentSong!.extras!['videoId']);
+                      await value.delete(videoId);
+                      if (isRealYtSong &&
+                          GetIt.I<YTMusicAuthService>().isSignedIn) {
+                        unawaited(
+                          GetIt.I<YTMusic>()
+                              .rateSong(videoId, rating: 'INDIFFERENT'),
+                        );
+                      }
                     }
                   },
                 );

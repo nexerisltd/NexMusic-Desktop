@@ -1,0 +1,64 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index c6a09bf..49df3af 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -81,7 +81,10 @@ class _BootstrapState extends State<_Bootstrap> {
+     // Initialize JustAudioMediaKit for Windows, Linux, and macOS
+     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+       JustAudioMediaKit.ensureInitialized();
+-      JustAudioMediaKit.bufferSize = 8 * 1024 * 1024;
++      // Bigger read-ahead buffer so brief CPU contention (heavy background
++      // tasks, other apps under load) doesn't starve the audio decoder and
++      // cause audible stutter — 8MB was cutting it close under load.
++      JustAudioMediaKit.bufferSize = 32 * 1024 * 1024;
+       JustAudioMediaKit.title = 'NexMusic';
+       JustAudioMediaKit.prefetchPlaylist = true;
+       JustAudioMediaKit.pitch = true;
+diff --git a/lib/services/media_player.dart b/lib/services/media_player.dart
+index 072198c..1d7e5c1 100644
+--- a/lib/services/media_player.dart
++++ b/lib/services/media_player.dart
+@@ -79,32 +79,17 @@ class MediaPlayer extends ChangeNotifier {
+         List<IndexedAudioSource>? sequence,
+         int? currentIndex,
+         MediaItem? currentItem
+-      })> get currentTrackStream => Rx.combineLatest2<
+-          List<IndexedAudioSource>?,
+-          int?,
+-          ({
+-            List<IndexedAudioSource>? sequence,
+-            int? currentIndex,
+-            MediaItem? currentItem
+-          })>(
+-        _player.sequenceStream,
+-        _player.currentIndexStream,
+-        (sequence, currentIndex) {
+-          MediaItem? currentItem;
+-          if (sequence != null &&
+-              currentIndex != null &&
+-              currentIndex >= 0 &&
+-              currentIndex < sequence.length) {
+-            final tag = sequence[currentIndex].tag;
+-            if (tag is MediaItem) currentItem = tag;
+-          }
+-          return (
+-            sequence: sequence,
+-            currentIndex: currentIndex,
+-            currentItem: currentItem,
+-          );
+-        },
+-      );
++      })> get currentTrackStream => _player.sequenceStateStream.map((state) {
++        MediaItem? currentItem;
++        final tag = state?.currentSource?.tag;
++        if (tag is MediaItem) currentItem = tag;
++
++        return (
++          sequence: state?.sequence,
++          currentIndex: state?.currentIndex,
++          currentItem: currentItem,
++        );
++      });
+ 
+   Future<void> _init() async {
+     await _loadLoudnessEnhancer();

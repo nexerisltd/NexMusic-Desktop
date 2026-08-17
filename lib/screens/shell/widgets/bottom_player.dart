@@ -75,8 +75,8 @@ class _BottomPlayerState extends State<BottomPlayer> {
                 ),
                 child: LiquidGlassSurface(
                   borderRadius: BorderRadius.circular(50),
-                  blurSigma: 18,
-                  tintOpacity: 0.55,
+                  blurSigma: 12,
+                  tintOpacity: 0.6,
                   tintColor: backgroundColor ?? const Color(0xFF202020),
                   child: Padding(
                       padding: const EdgeInsets.symmetric(

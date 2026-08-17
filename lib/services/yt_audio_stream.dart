@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:get_it/get_it.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
+import 'ytmusic_auth.dart';
 
 class YouTubeAudioSource extends StreamAudioSource {
   final String videoId;
@@ -20,8 +23,11 @@ class YouTubeAudioSource extends StreamAudioSource {
   Future<AudioOnlyStreamInfo> _getStreamInfo() async {
     if (_cachedStreamInfo != null) return _cachedStreamInfo!;
 
-    final manifest = await ytExplode.videos.streams.getManifest(videoId,
-        requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
+    final manifest = await ytExplode.videos.streams.getManifest(
+      videoId,
+      requireWatchPage: true,
+      ytClients: [YoutubeApiClient.androidVr],
+    );
     Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
     if (Platform.isMacOS || Platform.isIOS) {
       final mp4Streams = supportedStreams
@@ -45,28 +51,58 @@ class YouTubeAudioSource extends StreamAudioSource {
     return audioStream;
   }
 
+  bool _looksLikeAuthFailure(Object e) {
+    final message = e.toString().toLowerCase();
+    return message.contains('bot') ||
+        message.contains('403') ||
+        message.contains('sign in') ||
+        message.contains('unplayable');
+  }
+
   @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
+  Future<StreamAudioResponse> request([int? start, int? end]) =>
+      _requestWithRetry(start, end, hasRetried: false);
+
+  Future<StreamAudioResponse> _requestWithRetry(
+    int? start,
+    int? end, {
+    required bool hasRetried,
+  }) async {
     try {
       final audioStream = await _getStreamInfo();
 
-      start ??= 0;
-      end ??= (audioStream.isThrottled
-          ? (end ?? (start + 10379935))
-          : audioStream.size.totalBytes);
-      if (end > audioStream.size.totalBytes) {
-        end = audioStream.size.totalBytes;
+      var effectiveStart = start ?? 0;
+      var effectiveEnd = end ??
+          (audioStream.isThrottled
+              ? (effectiveStart + 10379935)
+              : audioStream.size.totalBytes);
+      if (effectiveEnd > audioStream.size.totalBytes) {
+        effectiveEnd = audioStream.size.totalBytes;
       }
 
-      final stream = await _downloadStream(audioStream.url, start, end - 1);
+      final stream = await _downloadStream(
+          audioStream.url, effectiveStart, effectiveEnd - 1);
       return StreamAudioResponse(
         sourceLength: audioStream.size.totalBytes,
-        contentLength: end - start,
-        offset: start,
+        contentLength: effectiveEnd - effectiveStart,
+        offset: effectiveStart,
         stream: stream,
         contentType: audioStream.codec.mimeType,
       );
     } catch (e) {
+      // Bot-detection/auth failures often mean the YT Music session
+      // cookies have gone stale. Silently refresh them once and retry
+      // before giving up, instead of failing the whole song outright.
+      if (!hasRetried && _looksLikeAuthFailure(e)) {
+        try {
+          await GetIt.I<YTMusicAuthService>().silentlyRefreshSession();
+        } catch (_) {
+          // Refresh itself failing just means we fall through to the
+          // normal error below.
+        }
+        _cachedStreamInfo = null;
+        return _requestWithRetry(start, end, hasRetried: true);
+      }
       throw Exception('Failed to load audio: $e');
     }
   }

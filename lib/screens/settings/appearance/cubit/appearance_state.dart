@@ -16,6 +16,10 @@ class AppearanceLoaded extends AppearanceState {
   final double thumbnailCornerRadius;
   final bool hidePlayerThumbnail;
   final int playerBackgroundStyle;
+  final bool cropAlbumArt;
+  final int playerButtonsStyle;
+  final int lyricsTextPosition;
+  final int defaultOpenTab;
 
   const AppearanceLoaded({
     required this.themeMode,
@@ -28,5 +32,9 @@ class AppearanceLoaded extends AppearanceState {
     required this.thumbnailCornerRadius,
     required this.hidePlayerThumbnail,
     required this.playerBackgroundStyle,
+    required this.cropAlbumArt,
+    required this.playerButtonsStyle,
+    required this.lyricsTextPosition,
+    required this.defaultOpenTab,
   });
 }

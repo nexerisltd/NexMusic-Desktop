@@ -29,4 +29,16 @@ class EqualizerCubit extends Cubit<EqualizerState> {
 
     emit(state.copyWith(bands: updated));
   }
+
+  /// Applies a full preset: sets every band's gain in one state update
+  /// instead of one emit per band. [gains] must be ordered to match
+  /// [EqualizerState.bands]' index order.
+  void setAllBands(List<double> gains) {
+    final updated = [
+      for (final b in state.bands)
+        if (b.index < gains.length) b.copyWith(gain: gains[b.index]) else b,
+    ];
+
+    emit(state.copyWith(bands: updated));
+  }
 }

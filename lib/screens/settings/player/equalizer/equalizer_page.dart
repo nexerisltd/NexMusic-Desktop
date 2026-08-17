@@ -13,6 +13,7 @@ import 'package:nexmusic/themes/text_styles.dart';
 import 'package:nexmusic/utils/adaptive_widgets/slider.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../../../services/equalizer_backend.dart';
+import 'eq_presets.dart';
 import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
 
 class EqualizerPage extends StatelessWidget {
@@ -69,6 +70,68 @@ class EqualizerPage extends StatelessWidget {
 
 class _EqualizerView extends StatelessWidget {
   const _EqualizerView();
+
+  Future<void> _applyPreset(BuildContext context, List<double> gains) async {
+    final settings = GetIt.I<SettingsManager>();
+    context.read<EqualizerCubit>().setAllBands(gains);
+    settings.equalizerBandsGain = List<double>.from(gains);
+    await GetIt.I<EqualizerBackend>().setAllBands(gains);
+  }
+
+  bool _matchesPreset(List<EqBand> bands, List<double> presetGains) {
+    if (bands.length != presetGains.length) return false;
+    for (var i = 0; i < bands.length; i++) {
+      if ((bands[i].gain - presetGains[i]).abs() > 0.01) return false;
+    }
+    return true;
+  }
+
+  Widget _presetSection(
+    BuildContext context,
+    String title,
+    List<EqPreset> presets,
+    List<EqBand> currentBands,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final preset in presets)
+                FilterChip(
+                  label: Text(preset.name),
+                  selected: _matchesPreset(currentBands, preset.gains),
+                  showCheckmark: false,
+                  selectedColor: Theme.of(context).colorScheme.primary,
+                  labelStyle: TextStyle(
+                    color: _matchesPreset(currentBands, preset.gains)
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : null,
+                    fontWeight: _matchesPreset(currentBands, preset.gains)
+                        ? FontWeight.bold
+                        : null,
+                  ),
+                  onSelected: (_) => _applyPreset(context, preset.gains),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +206,14 @@ class _EqualizerView extends StatelessWidget {
               builder: (context, state) {
                 if (!state.enabled) return const SizedBox();
 
-                return SizedBox(
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _presetSection(context, 'Nex Signature', EqPresets.nexSignature, state.bands),
+                    _presetSection(context, 'Dolby Atmos', EqPresets.dolbyAtmos, state.bands),
+                    _presetSection(context, 'Dirac Audio', EqPresets.diracAudio, state.bands),
+                    const SizedBox(height: 8),
+                    SizedBox(
                   height: 250,
                   child: Row(
                     children: [
@@ -177,6 +247,8 @@ class _EqualizerView extends StatelessWidget {
                         ),
                     ],
                   ),
+                    ),
+                  ],
                 );
               },
             ),

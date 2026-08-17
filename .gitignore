@@ -93,6 +93,9 @@ coverage/
 lib/services/*_secret.dart
 *.env
 
+# Patch files (applied then discarded, never meant to be tracked)
+*.patch
+
 # Installer output
 installer.exe
 NexMusic-Desktop_v.*.exe

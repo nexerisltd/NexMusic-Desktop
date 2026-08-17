@@ -16,6 +16,7 @@ class LibraryCubit extends Cubit<LibraryState> {
   late final Box _favouritesBox;
   late final Box _downloadsBox;
   late final Box _historyBox;
+  late final Box _localMediaBox;
 
   late final VoidCallback _listener;
   late final VoidCallback _ytAuthListener;
@@ -27,6 +28,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     _favouritesBox = Hive.box('FAVOURITES');
     _downloadsBox = Hive.box('DOWNLOADS');
     _historyBox = Hive.box('SONG_HISTORY');
+    _localMediaBox = Hive.box('LOCAL_MEDIA');
 
     _listener = _emitCurrentState;
 
@@ -34,6 +36,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     _favouritesBox.listenable().addListener(_listener);
     _downloadsBox.listenable().addListener(_listener);
     _historyBox.listenable().addListener(_listener);
+    _localMediaBox.listenable().addListener(_listener);
 
     // Re-fetch YT Music playlists whenever sign-in state changes.
     _ytAuthListener = () {
@@ -100,6 +103,8 @@ class LibraryCubit extends Cubit<LibraryState> {
     try {
       final downloadedCount =
           _downloadsBox.values.where((e) => e['status'] == 'DOWNLOADED').length;
+      final localFilesCount =
+          (_localMediaBox.get('songs', defaultValue: const []) as List).length;
 
       emit(
         LibraryLoaded(
@@ -107,6 +112,7 @@ class LibraryCubit extends Cubit<LibraryState> {
           favouritesCount: _favouritesBox.length,
           downloadsCount: downloadedCount,
           historyCount: _historyBox.length,
+          localFilesCount: localFilesCount,
           ytMusicPlaylists: _ytMusicPlaylists,
         ),
       );
@@ -121,6 +127,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     _favouritesBox.listenable().removeListener(_listener);
     _downloadsBox.listenable().removeListener(_listener);
     _historyBox.listenable().removeListener(_listener);
+    _localMediaBox.listenable().removeListener(_listener);
     if (GetIt.I.isRegistered<YTMusicAuthService>()) {
       GetIt.I<YTMusicAuthService>().removeListener(_ytAuthListener);
     }

@@ -21,4 +21,10 @@ abstract class EqualizerBackend {
 
   Future<void> setEnabled(bool enabled);
   Future<void> setBandGain(int index, double gain);
+
+  /// Sets every band's gain at once (e.g. applying a preset), rebuilding
+  /// the underlying audio effect only once instead of once per band.
+  /// [gains] must be the same length as [bands]; extra values are
+  /// ignored, missing ones leave that band unchanged.
+  Future<void> setAllBands(List<double> gains);
 }

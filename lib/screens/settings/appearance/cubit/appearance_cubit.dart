@@ -26,6 +26,10 @@ class AppearanceCubit extends Cubit<AppearanceState> {
                 GetIt.I<SettingsManager>().hidePlayerThumbnail,
             playerBackgroundStyle:
                 GetIt.I<SettingsManager>().playerBackgroundStyle,
+            cropAlbumArt: GetIt.I<SettingsManager>().cropAlbumArt,
+            playerButtonsStyle: GetIt.I<SettingsManager>().playerButtonsStyle,
+            lyricsTextPosition: GetIt.I<SettingsManager>().lyricsTextPosition,
+            defaultOpenTab: GetIt.I<SettingsManager>().defaultOpenTab,
           ),
         ) {
     _listener = () {
@@ -52,6 +56,10 @@ class AppearanceCubit extends Cubit<AppearanceState> {
         thumbnailCornerRadius: _settings.thumbnailCornerRadius,
         hidePlayerThumbnail: _settings.hidePlayerThumbnail,
         playerBackgroundStyle: _settings.playerBackgroundStyle,
+        cropAlbumArt: _settings.cropAlbumArt,
+        playerButtonsStyle: _settings.playerButtonsStyle,
+        lyricsTextPosition: _settings.lyricsTextPosition,
+        defaultOpenTab: _settings.defaultOpenTab,
       ),
     );
   }
@@ -91,6 +99,22 @@ class AppearanceCubit extends Cubit<AppearanceState> {
 
   void setPlayerBackgroundStyle(int value) {
     _settings.playerBackgroundStyle = value;
+  }
+
+  void setCropAlbumArt(bool value) {
+    _settings.cropAlbumArt = value;
+  }
+
+  void setPlayerButtonsStyle(int value) {
+    _settings.playerButtonsStyle = value;
+  }
+
+  void setLyricsTextPosition(int value) {
+    _settings.lyricsTextPosition = value;
+  }
+
+  void setDefaultOpenTab(int value) {
+    _settings.defaultOpenTab = value;
   }
 
   @override

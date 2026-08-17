@@ -62,6 +62,7 @@ class LibraryPage extends StatelessWidget {
                   :final favouritesCount,
                   :final downloadsCount,
                   :final historyCount,
+                  :final localFilesCount,
                   :final ytMusicPlaylists
                 ) =>
                   _LibraryBody(
@@ -69,6 +70,7 @@ class LibraryPage extends StatelessWidget {
                     favouritesCount: favouritesCount,
                     downloadsCount: downloadsCount,
                     historyCount: historyCount,
+                    localFilesCount: localFilesCount,
                     ytMusicPlaylists: ytMusicPlaylists,
                   ),
               },
@@ -86,12 +88,14 @@ class _LibraryBody extends StatelessWidget {
       this.favouritesCount = 0,
       this.downloadsCount = 0,
       this.historyCount = 0,
+      this.localFilesCount = 0,
       this.ytMusicPlaylists = const []});
 
   final Map playlists;
   final int favouritesCount;
   final int downloadsCount;
   final int historyCount;
+  final int localFilesCount;
   final List<Map<String, dynamic>> ytMusicPlaylists;
 
   @override
@@ -119,6 +123,13 @@ class _LibraryBody extends StatelessWidget {
       'subtitle': S.of(context).nSongs(historyCount),
       'icon': Icons.history,
       'onTap': () => context.push('/saved/history_page'),
+    });
+
+    gridItems.add({
+      'title': 'Local Files',
+      'subtitle': S.of(context).nSongs(localFilesCount),
+      'icon': Icons.folder_outlined,
+      'onTap': () => context.push('/saved/local_files_page'),
     });
 
     // Playlists

@@ -45,4 +45,13 @@ class AndroidEqualizerAdapter implements EqualizerBackend {
     _parameters = params;
     await params.bands[index].setGain(gain);
   }
+
+  @override
+  Future<void> setAllBands(List<double> gains) async {
+    final params = _parameters ?? await androidEqualizer.parameters;
+    _parameters = params;
+    for (var i = 0; i < params.bands.length && i < gains.length; i++) {
+      await params.bands[i].setGain(gains[i]);
+    }
+  }
 }

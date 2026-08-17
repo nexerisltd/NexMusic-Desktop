@@ -1,0 +1,110 @@
+diff --git a/lib/screens/library/playlist/playlist_details_page.dart b/lib/screens/library/playlist/playlist_details_page.dart
+index 01e0f00..777c9e0 100644
+--- a/lib/screens/library/playlist/playlist_details_page.dart
++++ b/lib/screens/library/playlist/playlist_details_page.dart
+@@ -1,9 +1,11 @@
+ import 'package:flutter/material.dart';
+ import 'package:flutter_bloc/flutter_bloc.dart';
+ import 'package:flutter_swipe_action_cell/core/cell.dart';
++import 'package:get_it/get_it.dart';
+ 
+ import '../../../../../generated/l10n.dart';
+ import '../../../../../services/bottom_message.dart';
++import '../../../../../services/download_manager.dart';
+ import '../../../../../utils/bottom_modals.dart';
+ import '../../../../../core/widgets/section_item.dart';
+ import 'cubit/playlist_details_cubit.dart';
+@@ -56,6 +58,22 @@ class _PlaylistView extends StatelessWidget {
+       appBar: AppBar(
+         title: Text(playlist['title']),
+         centerTitle: true,
++        actions: [
++          if ((playlist['songs'] as List?)?.isNotEmpty == true)
++            IconButton(
++              tooltip: 'Download for offline playback',
++              icon: const Icon(Icons.download_for_offline_outlined),
++              onPressed: () async {
++                await GetIt.I<DownloadManager>().downloadPlaylist(playlist);
++                if (context.mounted) {
++                  BottomMessage.showText(
++                    context,
++                    'Downloading playlist for offline playback…',
++                  );
++                }
++              },
++            ),
++        ],
+       ),
+       body: Center(
+         child: Container(
+diff --git a/lib/services/download_manager.dart b/lib/services/download_manager.dart
+index 8081e7c..6ba7bc4 100644
+--- a/lib/services/download_manager.dart
++++ b/lib/services/download_manager.dart
+@@ -1,8 +1,10 @@
++import 'dart:async';
+ import 'dart:collection';
+ import 'package:collection/collection.dart';
+ import 'dart:io';
+ import 'dart:typed_data';
+ 
++import 'package:cached_network_image/cached_network_image.dart';
+ import 'package:flutter/material.dart';
+ import 'package:get_it/get_it.dart';
+ import 'package:nexmusic/ytmusic/ytmusic.dart';
+@@ -140,6 +142,12 @@ class DownloadManager {
+             }
+           }
+     };
++
++    // Best-effort: pin the cover art to the disk cache now, while online,
++    // so it's still there once this song is played offline. Never blocks
++    // or fails the actual download if the thumbnail fetch fails.
++    unawaited(_precacheThumbnail(song));
++
+     // Check downloaded songs
+     final Map? downloadSong = _box.get(song['videoId']);
+     if (downloadSong != null) {
+@@ -174,6 +182,42 @@ class DownloadManager {
+     _downloadNext();
+   }
+ 
++  /// Downloads the song's largest-available thumbnail into
++  /// cached_network_image's disk cache ahead of time, so `SongThumbnail`
++  /// (which uses the same cache) can show it offline later without ever
++  /// needing a live network fetch. Failures are swallowed — a missing
++  /// offline cover shouldn't be treated as a failed download.
++  Future<void> _precacheThumbnail(Map song) async {
++    try {
++      final thumbnails = song['thumbnails'];
++      if (thumbnails is! List || thumbnails.isEmpty) return;
++      final url = thumbnails.last['url'];
++      if (url == null || url.toString().isEmpty) return;
++
++      final provider = CachedNetworkImageProvider(url.toString());
++      final stream = provider.resolve(const ImageConfiguration());
++      final completer = Completer<void>();
++      late ImageStreamListener listener;
++      listener = ImageStreamListener(
++        (image, synchronousCall) {
++          if (!completer.isCompleted) completer.complete();
++          stream.removeListener(listener);
++        },
++        onError: (error, stackTrace) {
++          if (!completer.isCompleted) completer.complete();
++          stream.removeListener(listener);
++        },
++      );
++      stream.addListener(listener);
++      await completer.future.timeout(
++        const Duration(seconds: 15),
++        onTimeout: () {},
++      );
++    } catch (_) {
++      // Ignore — this is purely a best-effort pre-cache.
++    }
++  }
++
+   Future<void> _downloadSong(Map song) async {
+     try {
+       await _updateSongMetadata(song['videoId'], {

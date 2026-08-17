@@ -12,6 +12,33 @@ import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+/// Maps the `lyricsTextPosition` setting (0=Left, 1=Center, 2=Right) to a
+/// [TextAlign], used by both the plain and synced lyrics views.
+TextAlign _lyricsTextAlign() {
+  switch (GetIt.I<SettingsManager>().lyricsTextPosition) {
+    case 0:
+      return TextAlign.left;
+    case 2:
+      return TextAlign.right;
+    default:
+      return TextAlign.center;
+  }
+}
+
+/// Same mapping as [_lyricsTextAlign] but as an [Alignment], for widgets
+/// that need to position a shrink-wrapped child rather than align text
+/// within a stretched box.
+Alignment _lyricsAlignment() {
+  switch (GetIt.I<SettingsManager>().lyricsTextPosition) {
+    case 0:
+      return Alignment.centerLeft;
+    case 2:
+      return Alignment.centerRight;
+    default:
+      return Alignment.center;
+  }
+}
+
 class LyricsBox extends StatefulWidget {
   const LyricsBox({
     required this.currentSong,
@@ -176,7 +203,7 @@ class PlainLyricsWidget extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
         child: SelectableText(
           "\n${lyrics.lyricsPlain}\n",
-          textAlign: TextAlign.center,
+          textAlign: _lyricsTextAlign(),
           style: TextStyle(
             fontSize: GetIt.I<SettingsManager>().lyricsTextSize + 10,
             fontWeight: FontWeight.w800,
@@ -401,9 +428,12 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget>
                                 ]
                               : [],
                         ),
-                        child: Text(
-                          lyricText,
-                          textAlign: TextAlign.center,
+                        child: Align(
+                          alignment: _lyricsAlignment(),
+                          child: Text(
+                            lyricText,
+                            textAlign: _lyricsTextAlign(),
+                          ),
                         ),
                       );
                     },

@@ -1,0 +1,438 @@
+diff --git a/lib/screens/player/player_page.dart b/lib/screens/player/player_page.dart
+index 1fa7bf7..f660188 100644
+--- a/lib/screens/player/player_page.dart
++++ b/lib/screens/player/player_page.dart
+@@ -310,8 +310,9 @@ class _PlayerPageState extends State<PlayerPage> {
+                                                                   : SongThumbnail(
+                                                                 song: currentSong!
+                                                                     .extras!,
+-                                                                fit: BoxFit
+-                                                                    .cover,
++                                                                fit: GetIt.I<SettingsManager>().cropAlbumArt
++                                                                    ? BoxFit.cover
++                                                                    : BoxFit.contain,
+                                                                 onImageReady:
+                                                                     updateBackgroundColor,
+                                                               ),
+@@ -418,7 +419,9 @@ class _PlayerPageState extends State<PlayerPage> {
+                                                     BorderRadius.circular(12),
+                                                 child: SongThumbnail(
+                                                   song: currentSong!.extras!,
+-                                                  fit: BoxFit.cover,
++                                                  fit: GetIt.I<SettingsManager>().cropAlbumArt
++                                                      ? BoxFit.cover
++                                                      : BoxFit.contain,
+                                                   onImageReady:
+                                                       updateBackgroundColor,
+                                                 ),
+diff --git a/lib/screens/player/widgets/lyrics_box.dart b/lib/screens/player/widgets/lyrics_box.dart
+index d442d22..61358c5 100644
+--- a/lib/screens/player/widgets/lyrics_box.dart
++++ b/lib/screens/player/widgets/lyrics_box.dart
+@@ -12,6 +12,33 @@ import 'package:provider/provider.dart';
+ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+ import 'package:wakelock_plus/wakelock_plus.dart';
+ 
++/// Maps the `lyricsTextPosition` setting (0=Left, 1=Center, 2=Right) to a
++/// [TextAlign], used by both the plain and synced lyrics views.
++TextAlign _lyricsTextAlign() {
++  switch (GetIt.I<SettingsManager>().lyricsTextPosition) {
++    case 0:
++      return TextAlign.left;
++    case 2:
++      return TextAlign.right;
++    default:
++      return TextAlign.center;
++  }
++}
++
++/// Same mapping as [_lyricsTextAlign] but as an [Alignment], for widgets
++/// that need to position a shrink-wrapped child rather than align text
++/// within a stretched box.
++Alignment _lyricsAlignment() {
++  switch (GetIt.I<SettingsManager>().lyricsTextPosition) {
++    case 0:
++      return Alignment.centerLeft;
++    case 2:
++      return Alignment.centerRight;
++    default:
++      return Alignment.center;
++  }
++}
++
+ class LyricsBox extends StatefulWidget {
+   const LyricsBox({
+     required this.currentSong,
+@@ -176,7 +203,7 @@ class PlainLyricsWidget extends StatelessWidget {
+         padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
+         child: SelectableText(
+           "\n${lyrics.lyricsPlain}\n",
+-          textAlign: TextAlign.center,
++          textAlign: _lyricsTextAlign(),
+           style: TextStyle(
+             fontSize: GetIt.I<SettingsManager>().lyricsTextSize + 10,
+             fontWeight: FontWeight.w800,
+@@ -401,9 +428,12 @@ class _SyncedLyricsWidgetState extends State<SyncedLyricsWidget>
+                                 ]
+                               : [],
+                         ),
+-                        child: Text(
+-                          lyricText,
+-                          textAlign: TextAlign.center,
++                        child: Align(
++                          alignment: _lyricsAlignment(),
++                          child: Text(
++                            lyricText,
++                            textAlign: _lyricsTextAlign(),
++                          ),
+                         ),
+                       );
+                     },
+diff --git a/lib/screens/player/widgets/play_pause_buton.dart b/lib/screens/player/widgets/play_pause_buton.dart
+index 611b80b..bbaccf3 100644
+--- a/lib/screens/player/widgets/play_pause_buton.dart
++++ b/lib/screens/player/widgets/play_pause_buton.dart
+@@ -1,6 +1,7 @@
+ import 'package:flutter/material.dart';
+ import 'package:get_it/get_it.dart';
+ import 'package:nexmusic/services/media_player.dart';
++import 'package:nexmusic/services/settings_manager.dart';
+ import 'package:nexmusic/utils/extensions.dart';
+ import 'package:loading_indicator_m3e/loading_indicator_m3e.dart';
+ 
+@@ -53,14 +54,19 @@ class _PlayPauseButtonState extends State<PlayPauseButton>
+                 ? _animationController.forward()
+                 : _animationController.reverse();
+           }
++          final style = GetIt.I<SettingsManager>().playerButtonsStyle;
++          final Color buttonColor = switch (style) {
++            1 => Theme.of(context).colorScheme.primary,
++            2 => Theme.of(context).colorScheme.tertiary,
++            _ => context.isDarkMode ? Colors.white : Colors.black,
++          };
+           return AnimatedContainer(
+             duration: const Duration(milliseconds: 200),
+             height: 60,
+             width: 60,
+             alignment: Alignment.center,
+             decoration: BoxDecoration(
+-              color: (context.isDarkMode ? Colors.white : Colors.black)
+-                  .withAlpha(50),
++              color: buttonColor.withAlpha(50),
+               borderRadius: BorderRadius.circular(
+                   buttonState == ButtonState.playing ? 15 : 40),
+             ),
+diff --git a/lib/screens/settings/appearance/appearance_page.dart b/lib/screens/settings/appearance/appearance_page.dart
+index 1583138..047c038 100644
+--- a/lib/screens/settings/appearance/appearance_page.dart
++++ b/lib/screens/settings/appearance/appearance_page.dart
+@@ -149,7 +149,35 @@ class AppearancePage extends StatelessWidget {
+                             .read<AppearanceCubit>()
+                             .setAutoScrollLyrics(value);
+                       },
++                    ),
++
++                    SettingTile(
++                      title: "Lyrics text position",
++                      leading: const Icon(Icons.format_align_center),
+                       isLast: true,
++                      trailing: AdaptiveDropdownButton<int>(
++                        value: s.lyricsTextPosition,
++                        items: const [
++                          AdaptiveDropdownMenuItem(
++                            value: 0,
++                            child: Text("Left"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 1,
++                            child: Text("Center"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 2,
++                            child: Text("Right"),
++                          ),
++                        ],
++                        onChanged: (value) {
++                          if (value == null) return;
++                          context
++                              .read<AppearanceCubit>()
++                              .setLyricsTextPosition(value);
++                        },
++                      ),
+                     ),
+ 
+                     const GroupTitle(title: "Player"),
+@@ -213,6 +241,83 @@ class AppearancePage extends StatelessWidget {
+                         },
+                       ),
+                     ),
++
++                    const GroupTitle(title: "Player controls"),
++
++                    SettingSwitchTile(
++                      title: "Crop album art",
++                      subtitle: "Fill the frame instead of showing it whole",
++                      leading: const Icon(Icons.crop),
++                      value: s.cropAlbumArt,
++                      isFirst: true,
++                      onChanged: (value) {
++                        context
++                            .read<AppearanceCubit>()
++                            .setCropAlbumArt(value);
++                      },
++                    ),
++
++                    SettingTile(
++                      title: "Player buttons style",
++                      leading: const Icon(Icons.tune),
++                      isLast: true,
++                      trailing: AdaptiveDropdownButton<int>(
++                        value: s.playerButtonsStyle,
++                        items: const [
++                          AdaptiveDropdownMenuItem(
++                            value: 0,
++                            child: Text("Default"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 1,
++                            child: Text("Primary color"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 2,
++                            child: Text("Tertiary color"),
++                          ),
++                        ],
++                        onChanged: (value) {
++                          if (value == null) return;
++                          context
++                              .read<AppearanceCubit>()
++                              .setPlayerButtonsStyle(value);
++                        },
++                      ),
++                    ),
++
++                    const GroupTitle(title: "Navigation"),
++
++                    SettingTile(
++                      title: "Default open tab",
++                      subtitle: "Which tab NexMusic opens to on startup",
++                      leading: const Icon(Icons.tab_outlined),
++                      isFirst: true,
++                      isLast: true,
++                      trailing: AdaptiveDropdownButton<int>(
++                        value: s.defaultOpenTab,
++                        items: const [
++                          AdaptiveDropdownMenuItem(
++                            value: 0,
++                            child: Text("Home"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 1,
++                            child: Text("Search"),
++                          ),
++                          AdaptiveDropdownMenuItem(
++                            value: 2,
++                            child: Text("Library"),
++                          ),
++                        ],
++                        onChanged: (value) {
++                          if (value == null) return;
++                          context
++                              .read<AppearanceCubit>()
++                              .setDefaultOpenTab(value);
++                        },
++                      ),
++                    ),
+                   ],
+                 );
+               },
+diff --git a/lib/screens/settings/appearance/cubit/appearance_cubit.dart b/lib/screens/settings/appearance/cubit/appearance_cubit.dart
+index c29ba25..f7ddab4 100644
+--- a/lib/screens/settings/appearance/cubit/appearance_cubit.dart
++++ b/lib/screens/settings/appearance/cubit/appearance_cubit.dart
+@@ -26,6 +26,10 @@ class AppearanceCubit extends Cubit<AppearanceState> {
+                 GetIt.I<SettingsManager>().hidePlayerThumbnail,
+             playerBackgroundStyle:
+                 GetIt.I<SettingsManager>().playerBackgroundStyle,
++            cropAlbumArt: GetIt.I<SettingsManager>().cropAlbumArt,
++            playerButtonsStyle: GetIt.I<SettingsManager>().playerButtonsStyle,
++            lyricsTextPosition: GetIt.I<SettingsManager>().lyricsTextPosition,
++            defaultOpenTab: GetIt.I<SettingsManager>().defaultOpenTab,
+           ),
+         ) {
+     _listener = () {
+@@ -52,6 +56,10 @@ class AppearanceCubit extends Cubit<AppearanceState> {
+         thumbnailCornerRadius: _settings.thumbnailCornerRadius,
+         hidePlayerThumbnail: _settings.hidePlayerThumbnail,
+         playerBackgroundStyle: _settings.playerBackgroundStyle,
++        cropAlbumArt: _settings.cropAlbumArt,
++        playerButtonsStyle: _settings.playerButtonsStyle,
++        lyricsTextPosition: _settings.lyricsTextPosition,
++        defaultOpenTab: _settings.defaultOpenTab,
+       ),
+     );
+   }
+@@ -93,6 +101,22 @@ class AppearanceCubit extends Cubit<AppearanceState> {
+     _settings.playerBackgroundStyle = value;
+   }
+ 
++  void setCropAlbumArt(bool value) {
++    _settings.cropAlbumArt = value;
++  }
++
++  void setPlayerButtonsStyle(int value) {
++    _settings.playerButtonsStyle = value;
++  }
++
++  void setLyricsTextPosition(int value) {
++    _settings.lyricsTextPosition = value;
++  }
++
++  void setDefaultOpenTab(int value) {
++    _settings.defaultOpenTab = value;
++  }
++
+   @override
+   Future<void> close() {
+     _settings.removeListener(_listener);
+diff --git a/lib/screens/settings/appearance/cubit/appearance_state.dart b/lib/screens/settings/appearance/cubit/appearance_state.dart
+index daf9bb2..4fc93d1 100644
+--- a/lib/screens/settings/appearance/cubit/appearance_state.dart
++++ b/lib/screens/settings/appearance/cubit/appearance_state.dart
+@@ -16,6 +16,10 @@ class AppearanceLoaded extends AppearanceState {
+   final double thumbnailCornerRadius;
+   final bool hidePlayerThumbnail;
+   final int playerBackgroundStyle;
++  final bool cropAlbumArt;
++  final int playerButtonsStyle;
++  final int lyricsTextPosition;
++  final int defaultOpenTab;
+ 
+   const AppearanceLoaded({
+     required this.themeMode,
+@@ -28,5 +32,9 @@ class AppearanceLoaded extends AppearanceState {
+     required this.thumbnailCornerRadius,
+     required this.hidePlayerThumbnail,
+     required this.playerBackgroundStyle,
++    required this.cropAlbumArt,
++    required this.playerButtonsStyle,
++    required this.lyricsTextPosition,
++    required this.defaultOpenTab,
+   });
+ }
+diff --git a/lib/screens/shell/widgets/bottom_player.dart b/lib/screens/shell/widgets/bottom_player.dart
+index f803d56..186a4dd 100644
+--- a/lib/screens/shell/widgets/bottom_player.dart
++++ b/lib/screens/shell/widgets/bottom_player.dart
+@@ -75,8 +75,8 @@ class _BottomPlayerState extends State<BottomPlayer> {
+                 ),
+                 child: LiquidGlassSurface(
+                   borderRadius: BorderRadius.circular(50),
+-                  blurSigma: 18,
+-                  tintOpacity: 0.55,
++                  blurSigma: 12,
++                  tintOpacity: 0.6,
+                   tintColor: backgroundColor ?? const Color(0xFF202020),
+                   child: Padding(
+                       padding: const EdgeInsets.symmetric(
+diff --git a/lib/services/settings_manager.dart b/lib/services/settings_manager.dart
+index 41e4e96..77e2ccb 100644
+--- a/lib/services/settings_manager.dart
++++ b/lib/services/settings_manager.dart
+@@ -38,6 +38,13 @@ class SettingsManager extends ChangeNotifier {
+   bool _hidePlayerThumbnail = false;
+   // 0 = Animated Gradient, 1 = Solid Color, 2 = Liquid Glass
+   int _playerBackgroundStyle = 0;
++  bool _cropAlbumArt = false;
++  // 0 = Default, 1 = Primary color, 2 = Tertiary color
++  int _playerButtonsStyle = 0;
++  // 0 = Left, 1 = Center, 2 = Right
++  int _lyricsTextPosition = 1;
++  // 0 = Home, 1 = Search, 2 = Library
++  int _defaultOpenTab = 0;
+   Color? _accentColor;
+   bool _amoledBlack = true;
+   bool _dynamicColors = false;
+@@ -70,6 +77,10 @@ class SettingsManager extends ChangeNotifier {
+   double get thumbnailCornerRadius => _thumbnailCornerRadius;
+   bool get hidePlayerThumbnail => _hidePlayerThumbnail;
+   int get playerBackgroundStyle => _playerBackgroundStyle;
++  bool get cropAlbumArt => _cropAlbumArt;
++  int get playerButtonsStyle => _playerButtonsStyle;
++  int get lyricsTextPosition => _lyricsTextPosition;
++  int get defaultOpenTab => _defaultOpenTab;
+ 
+   Color? get accentColor => _accentColor;
+   bool get amoledBlack => _amoledBlack;
+@@ -120,6 +131,10 @@ class SettingsManager extends ChangeNotifier {
+         _box.get('HIDE_PLAYER_THUMBNAIL', defaultValue: false);
+     _playerBackgroundStyle =
+         _box.get('PLAYER_BACKGROUND_STYLE', defaultValue: 0);
++    _cropAlbumArt = _box.get('CROP_ALBUM_ART', defaultValue: false);
++    _playerButtonsStyle = _box.get('PLAYER_BUTTONS_STYLE', defaultValue: 0);
++    _lyricsTextPosition = _box.get('LYRICS_TEXT_POSITION', defaultValue: 1);
++    _defaultOpenTab = _box.get('DEFAULT_OPEN_TAB', defaultValue: 0);
+     _equalizerEnabled = _box.get('EQUALIZER_ENABLED', defaultValue: false);
+     _loudnessEnabled = _box.get('LOUDNESS_ENABLED', defaultValue: false);
+     _loudnessTargetGain = _box.get('LOUDNESS_TARGET_GAIN', defaultValue: 0.0);
+@@ -251,6 +266,30 @@ class SettingsManager extends ChangeNotifier {
+     notifyListeners();
+   }
+ 
++  set cropAlbumArt(bool value) {
++    _box.put('CROP_ALBUM_ART', value);
++    _cropAlbumArt = value;
++    notifyListeners();
++  }
++
++  set playerButtonsStyle(int value) {
++    _box.put('PLAYER_BUTTONS_STYLE', value);
++    _playerButtonsStyle = value;
++    notifyListeners();
++  }
++
++  set lyricsTextPosition(int value) {
++    _box.put('LYRICS_TEXT_POSITION', value);
++    _lyricsTextPosition = value;
++    notifyListeners();
++  }
++
++  set defaultOpenTab(int value) {
++    _box.put('DEFAULT_OPEN_TAB', value);
++    _defaultOpenTab = value;
++    notifyListeners();
++  }
++
+   set accentColor(Color? color) {
+     int? c = color?.value;
+     _box.put('ACCENT_COLOR', c);
+diff --git a/lib/utils/router.dart b/lib/utils/router.dart
+index 19e07c3..08dd58a 100644
+--- a/lib/utils/router.dart
++++ b/lib/utils/router.dart
+@@ -28,9 +28,24 @@ import 'package:nexmusic/screens/settings/privacy/privacy_page.dart';
+ import 'package:nexmusic/screens/settings/services/yt_music/yt_music_page.dart';
+ import 'package:nexmusic/screens/settings/settings_page.dart';
+ import 'package:nexmusic/screens/shell/app_shell.dart';
++import 'package:nexmusic/services/settings_manager.dart';
++import 'package:get_it/get_it.dart';
++
++/// Maps the `defaultOpenTab` setting (0=Home, 1=Search, 2=Library) to the
++/// route NexMusic should land on at startup.
++String _initialLocationFromSettings() {
++  switch (GetIt.I<SettingsManager>().defaultOpenTab) {
++    case 1:
++      return '/search';
++    case 2:
++      return '/saved';
++    default:
++      return '/';
++  }
++}
+ 
+ GoRouter router = GoRouter(
+-  initialLocation: '/',
++  initialLocation: _initialLocationFromSettings(),
+   routes: [
+     ShellRoute(
+       builder: (context, state, child) => child,

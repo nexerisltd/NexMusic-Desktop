@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -23,6 +24,8 @@ import '../services/download_manager.dart';
 import '../services/library.dart';
 import '../services/media_player.dart';
 import '../services/settings_manager.dart';
+import '../services/ytmusic_auth.dart';
+import '../ytmusic/ytmusic.dart';
 import '../themes/colors.dart';
 import '../themes/text_styles.dart';
 import 'adaptive_widgets/adaptive_widgets.dart';
@@ -1250,16 +1253,32 @@ BottomModalLayout _songBottomModal(BuildContext context, Map song) {
                     : AdaptiveIcons.heart_fill),
                 onTap: () async {
                   Navigator.pop(context);
+                  final videoId = song['videoId'];
+                  final isRealYtSong =
+                      videoId != null && !videoId.toString().startsWith('local_');
                   if (item == null) {
                     await Hive.box('FAVOURITES').put(
-                      song['videoId'],
+                      videoId,
                       {
                         ...song,
                         'createdAt': DateTime.now().millisecondsSinceEpoch
                       },
                     );
+                    if (isRealYtSong &&
+                        GetIt.I<YTMusicAuthService>().isSignedIn) {
+                      unawaited(
+                        GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
+                      );
+                    }
                   } else {
-                    await value.delete(song['videoId']);
+                    await value.delete(videoId);
+                    if (isRealYtSong &&
+                        GetIt.I<YTMusicAuthService>().isSignedIn) {
+                      unawaited(
+                        GetIt.I<YTMusic>()
+                            .rateSong(videoId, rating: 'INDIFFERENT'),
+                      );
+                    }
                   }
                 },
               );
@@ -2281,16 +2300,32 @@ errorWidget: (context, url, error) => const Icon(Icons.music_note),
                   : S.of(context).Remove_From_Favourites,
               onTap: () async {
                 Navigator.pop(context);
+                final videoId = song['videoId'];
+                final isRealYtSong =
+                    videoId != null && !videoId.toString().startsWith('local_');
                 if (item == null) {
                   await Hive.box('FAVOURITES').put(
-                    song['videoId'],
+                    videoId,
                     {
                       ...song,
                       'createdAt': DateTime.now().millisecondsSinceEpoch
                     },
                   );
+                  if (isRealYtSong &&
+                      GetIt.I<YTMusicAuthService>().isSignedIn) {
+                    unawaited(
+                      GetIt.I<YTMusic>().rateSong(videoId, rating: 'LIKE'),
+                    );
+                  }
                 } else {
-                  await value.delete(song['videoId']);
+                  await value.delete(videoId);
+                  if (isRealYtSong &&
+                      GetIt.I<YTMusicAuthService>().isSignedIn) {
+                    unawaited(
+                      GetIt.I<YTMusic>()
+                          .rateSong(videoId, rating: 'INDIFFERENT'),
+                    );
+                  }
                 }
               },
             );

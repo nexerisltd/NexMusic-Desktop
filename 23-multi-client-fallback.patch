@@ -1,0 +1,44 @@
+diff --git a/lib/services/download_manager.dart b/lib/services/download_manager.dart
+index 6ba7bc4..bb45e6e 100644
+--- a/lib/services/download_manager.dart
++++ b/lib/services/download_manager.dart
+@@ -370,8 +370,15 @@ class DownloadManager {
+       {String quality = 'high'}) async {
+     try {
+       StreamManifest manifest = await ytExplode.videos.streamsClient
+-          .getManifest(videoId,
+-              requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
++          .getManifest(
++        videoId,
++        requireWatchPage: true,
++        ytClients: [
++          YoutubeApiClient.ios,
++          YoutubeApiClient.androidVr,
++          YoutubeApiClient.tv,
++        ],
++      );
+       List<AudioOnlyStreamInfo> streamInfos = manifest.audioOnly
+           .where((a) => a.container == StreamContainer.mp4)
+           .sortByBitrate()
+diff --git a/lib/services/yt_audio_stream.dart b/lib/services/yt_audio_stream.dart
+index fdecc96..334b905 100644
+--- a/lib/services/yt_audio_stream.dart
++++ b/lib/services/yt_audio_stream.dart
+@@ -20,8 +20,15 @@ class YouTubeAudioSource extends StreamAudioSource {
+   Future<AudioOnlyStreamInfo> _getStreamInfo() async {
+     if (_cachedStreamInfo != null) return _cachedStreamInfo!;
+ 
+-    final manifest = await ytExplode.videos.streams.getManifest(videoId,
+-        requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
++    final manifest = await ytExplode.videos.streams.getManifest(
++      videoId,
++      requireWatchPage: true,
++      ytClients: [
++        YoutubeApiClient.ios,
++        YoutubeApiClient.androidVr,
++        YoutubeApiClient.tv,
++      ],
++    );
+     Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
+     if (Platform.isMacOS || Platform.isIOS) {
+       final mp4Streams = supportedStreams

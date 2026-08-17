@@ -1,0 +1,32 @@
+diff --git a/lib/screens/settings/player/player_settings_page.dart b/lib/screens/settings/player/player_settings_page.dart
+index 8bcb0c7..b2a35b1 100644
+--- a/lib/screens/settings/player/player_settings_page.dart
++++ b/lib/screens/settings/player/player_settings_page.dart
+@@ -86,6 +86,27 @@ class PlayerSettingsPage extends StatelessWidget {
+                         isLast: true,
+                       ),
+ 
++                    const Padding(
++                      padding: EdgeInsets.only(top: 24, bottom: 8, left: 4),
++                      child: Text(
++                        "Audio",
++                        style: TextStyle(
++                          fontSize: 14,
++                          fontWeight: FontWeight.w600,
++                        ),
++                      ),
++                    ),
++
++                    SettingTile(
++                      title: "Loudness & Equalizer",
++                      subtitle:
++                          "Adjust playback loudness and the 10-band graphic equalizer",
++                      leading: const Icon(Icons.equalizer),
++                      isFirst: true,
++                      isLast: true,
++                      onTap: () => context.go('/settings/player/equalizer'),
++                    ),
++
+                     const Padding(
+                       padding: EdgeInsets.only(top: 24, bottom: 8, left: 4),
+                       child: Text(

@@ -1,0 +1,152 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index 91f01b4..c6a09bf 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -195,8 +195,55 @@ class _SplashScreen extends StatelessWidget {
+   }
+ }
+ 
+-class NexMusic extends StatelessWidget {
++class NexMusic extends StatefulWidget {
+   const NexMusic({super.key});
++
++  @override
++  State<NexMusic> createState() => _NexMusicState();
++}
++
++class _NexMusicState extends State<NexMusic> {
++  // CallbackShortcuts below only fires when some Focus node inside it has
++  // primary focus. After certain interactions (a dialog closing, clicking
++  // a non-focusable area) nothing ends up focused at all, and the
++  // shortcuts silently stop working — this handler is a focus-independent
++  // fallback for exactly that case, so Space/Ctrl+F/Ctrl+D always work on
++  // the main window. It intentionally does nothing while something IS
++  // focused (e.g. a search field), so normal typing isn't affected.
++  bool _handleGlobalKey(KeyEvent event) {
++    if (event is! KeyDownEvent) return false;
++    if (FocusManager.instance.primaryFocus?.hasFocus == true) return false;
++
++    final player = GetIt.I<MediaPlayer>().player;
++    final ctrl = HardwareKeyboard.instance.isControlPressed;
++
++    if (event.logicalKey == LogicalKeyboardKey.space) {
++      player.playing ? player.pause() : player.play();
++      return true;
++    }
++    if (ctrl && event.logicalKey == LogicalKeyboardKey.keyF) {
++      player.seekToNext();
++      return true;
++    }
++    if (ctrl && event.logicalKey == LogicalKeyboardKey.keyD) {
++      player.seekToPrevious();
++      return true;
++    }
++    return false;
++  }
++
++  @override
++  void initState() {
++    super.initState();
++    HardwareKeyboard.instance.addHandler(_handleGlobalKey);
++  }
++
++  @override
++  void dispose() {
++    HardwareKeyboard.instance.removeHandler(_handleGlobalKey);
++    super.dispose();
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return CallbackShortcuts(
+diff --git a/lib/services/desktop_equalizer.dart b/lib/services/desktop_equalizer.dart
+index 4eee521..2a18f10 100644
+--- a/lib/services/desktop_equalizer.dart
++++ b/lib/services/desktop_equalizer.dart
+@@ -67,6 +67,11 @@ class DesktopEqualizer implements EqualizerBackend {
+           ':width_type=o:width=1'
+           ':g=${band.gain.toStringAsFixed(2)}',
+     ];
++    if (segments.isEmpty) return '';
++    // High-gain presets (some boost several bands by +30/+40dB) will clip
++    // hard without this — a limiter after the EQ keeps the signal from
++    // distorting instead of trying to guess a "safe" preamp per preset.
++    segments.add('alimiter=limit=0.95');
+     return segments.join(',');
+   }
+ 
+diff --git a/lib/services/local_media_service.dart b/lib/services/local_media_service.dart
+index 0a58fb3..1c6d4a3 100644
+--- a/lib/services/local_media_service.dart
++++ b/lib/services/local_media_service.dart
+@@ -41,8 +41,26 @@ class LocalMediaService extends ChangeNotifier {
+   List<String> get folders =>
+       List<String>.from(_box.get('folders', defaultValue: <String>[]) as List);
+ 
+-  List<Map> get songs =>
+-      List<Map>.from(_box.get('songs', defaultValue: <Map>[]) as List);
++  List<Map<String, dynamic>> get songs {
++    final raw = _box.get('songs', defaultValue: const []) as List;
++    return raw.map((e) => _deepCastMap(e)).toList();
++  }
++
++  /// Hive stores nested Map/List structures without preserving their
++  /// generic type parameters (they come back as `Map<dynamic,dynamic>` /
++  /// `List<dynamic>`), which can cause subtle failures wherever the rest
++  /// of the app expects `Map<String, dynamic>`. This recursively rebuilds
++  /// every nested map/list with proper types.
++  Map<String, dynamic> _deepCastMap(dynamic value) {
++    final map = Map<String, dynamic>.from(value as Map);
++    return map.map((key, val) => MapEntry(key, _deepCastValue(val)));
++  }
++
++  dynamic _deepCastValue(dynamic value) {
++    if (value is Map) return _deepCastMap(value);
++    if (value is List) return value.map(_deepCastValue).toList();
++    return value;
++  }
+ 
+   Future<void> addFolder(String path) async {
+     final current = folders;
+@@ -118,20 +136,27 @@ class LocalMediaService extends ChangeNotifier {
+     final List<Map> found = [];
+     try {
+       for (final folderPath in folders) {
+-        final dir = Directory(folderPath);
+-        if (!await dir.exists()) continue;
+-
+-        await for (final entity in dir.list(
+-          recursive: true,
+-          followLinks: false,
+-        )) {
+-          if (entity is! File) continue;
+-          final path = entity.path;
+-          final dot = path.lastIndexOf('.');
+-          final ext = dot >= 0 ? path.substring(dot + 1).toLowerCase() : '';
+-          if (!supportedExtensions.contains(ext)) continue;
+-
+-          found.add(_songMapFor(entity));
++        try {
++          final dir = Directory(folderPath);
++          if (!await dir.exists()) continue;
++
++          await for (final entity in dir.list(
++            recursive: true,
++            followLinks: false,
++          )) {
++            if (entity is! File) continue;
++            final path = entity.path;
++            final dot = path.lastIndexOf('.');
++            final ext = dot >= 0 ? path.substring(dot + 1).toLowerCase() : '';
++            if (!supportedExtensions.contains(ext)) continue;
++
++            found.add(_songMapFor(entity));
++          }
++        } catch (e) {
++          // One folder failing (permission denied on a subfolder, a
++          // broken symlink, etc.) shouldn't wipe out everything already
++          // found in the other watched folders — skip it and keep going.
++          continue;
+         }
+       }
+       await _box.put('songs', found);
