@@ -15,6 +15,8 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'file_storage.dart';
 import 'settings_manager.dart';
 import 'stream_client.dart';
+import 'yt_client_config.dart';
+import 'yt_debug_log.dart';
 
 Box _box = Hive.box('DOWNLOADS');
 YoutubeExplode ytExplode = YoutubeExplode();
@@ -368,20 +370,47 @@ class DownloadManager {
 
   Future<AudioOnlyStreamInfo> _getSongInfo(String videoId,
       {String quality = 'high'}) async {
+    final stopwatch = Stopwatch()..start();
+    final clients = resolveAudioClients();
+    final authAttached = audioClientsHaveAuth(clients);
+
     try {
-      StreamManifest manifest = await ytExplode.videos.streamsClient
-          .getManifest(
-        videoId,
-        requireWatchPage: true,
-        ytClients: [YoutubeApiClient.androidVr],
+      // Same single-point-of-failure/burst-detection classes of bug as
+      // playback (see yt_audio_stream.dart) apply here too: this used to
+      // hardcode androidVr with no fallback, and up to
+      // maxConcurrentDownloads (3) of these can fire near-simultaneously,
+      // so this also goes through the shared fallback list and the same
+      // app-wide manifest-resolution lock.
+      StreamManifest manifest = await manifestResolutionLock.synchronized(
+        () => ytExplode.videos.streamsClient.getManifest(
+          videoId,
+          requireWatchPage: true,
+          ytClients: clients,
+        ),
       );
       List<AudioOnlyStreamInfo> streamInfos = manifest.audioOnly
           .where((a) => a.container == StreamContainer.mp4)
           .sortByBitrate()
           .reversed
           .toList();
-      return quality == 'low' ? streamInfos.first : streamInfos.last;
+      final chosen = quality == 'low' ? streamInfos.first : streamInfos.last;
+      YtDebugLog.event('manifest_fetch_ok', {
+        'videoId': videoId,
+        'authAttached': authAttached,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'resolvedClient': clientNameFromStreamUrl(chosen.url),
+        'itag': chosen.tag,
+        'context': 'download',
+      });
+      return chosen;
     } catch (e) {
+      YtDebugLog.event('manifest_fetch_failed', {
+        'videoId': videoId,
+        'authAttached': authAttached,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'error': e.toString(),
+        'context': 'download',
+      });
       rethrow;
     }
   }

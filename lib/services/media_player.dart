@@ -40,6 +40,21 @@ class MediaPlayer extends ChangeNotifier {
 
   bool autoFetching = false;
 
+  // Bumped every time something replaces "what's actively playing" (a new
+  // playSong/playAll/startRelated/startPlaylistSongs/stop call). Any
+  // in-flight background queue mutation (autofetch, playAll's remaining-
+  // songs task) captures the generation it started with and must abort if
+  // it no longer matches — otherwise a slow background task can land its
+  // addAudioSource() calls after a newer song has already taken over,
+  // silently corrupting the queue with a stray old track.
+  int _queueGeneration = 0;
+
+  // True when the current song failed to actually start (stream fetch
+  // error, etc.) rather than being deliberately paused by the user. Lets
+  // the play button retry loading the song instead of blindly resuming a
+  // player whose audio source is empty or broken.
+  bool _lastAttemptFailed = false;
+
   MediaPlayer() {
     if (Platform.isAndroid) {
       _equalizer = AndroidEqualizer();
@@ -238,6 +253,7 @@ class MediaPlayer extends ChangeNotifier {
           processingState == ProcessingState.buffering) {
         _buttonState.value = ButtonState.loading;
       } else if (processingState == ProcessingState.ready) {
+        if (isPlaying) _lastAttemptFailed = false;
         _buttonState.value =
             isPlaying ? ButtonState.playing : ButtonState.paused;
       } else if (processingState == ProcessingState.completed) {
@@ -255,6 +271,10 @@ class MediaPlayer extends ChangeNotifier {
     _player.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace st) {
+        // A mid-stream failure (e.g. the YouTube stream URL dying) also
+        // means resuming with a plain play() won't work — route the next
+        // manual play tap through togglePlayPause()'s retry path too.
+        _lastAttemptFailed = true;
         _buttonState.value = ButtonState.paused;
         notifyListeners();
       },
@@ -389,8 +409,17 @@ class MediaPlayer extends ChangeNotifier {
     if (isDownloaded) {
       return AudioSource.file(song['path'], tag: tag);
     } else {
-      // Use direct URL approach for macOS for better compatibility with AVFoundation
-      if (Platform.isMacOS) {
+      // Desktop (Windows/Linux/macOS) all run on the just_audio_media_kit
+      // (mpv) backend, which needs a real URL to hand to the native
+      // player. For a custom StreamAudioSource like YouTubeAudioSource,
+      // just_audio has to spin up its own internal loopback HTTP proxy
+      // (127.0.0.1:PORT/id/<uuid>) to bridge Dart bytes into mpv — and
+      // that proxy is unreliable in practice (mpv logs "stream: Failed to
+      // open ..." for it), causing playback to silently fail and mpv to
+      // auto-advance to whatever's next in the queue. Fetching the direct
+      // CDN URL and handing it straight to mpv (same approach already
+      // used for macOS) sidesteps the proxy entirely.
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         final quality =
             GetIt.I<SettingsManager>().streamingQuality.name.toLowerCase();
         return await getDirectUrlAudioSource(song['videoId'], quality, tag);
@@ -408,9 +437,16 @@ class MediaPlayer extends ChangeNotifier {
   Future<void> playSong(Map<String, dynamic> song) async {
     if (song['videoId'] == null) return;
 
-    // Generate a new request ID
-    final int requestId = DateTime.now().millisecondsSinceEpoch;
+    // Claim a new generation before touching the queue, so any in-flight
+    // background task from a previous song (autofetch, playAll's
+    // remaining-songs task) knows to stop mutating the queue.
+    _queueGeneration++;
+    final int myGeneration = _queueGeneration;
+
+    // Generate a new request ID for this call specifically.
+    final int requestId = DateTime.now().millisecondsSinceEpoch * 1000 + myGeneration % 1000;
     _lastPlayRequestId = requestId;
+    _lastAttemptFailed = false;
 
     _originalPlaylist = [song];
 
@@ -453,10 +489,33 @@ class MediaPlayer extends ChangeNotifier {
     } catch (e) {
       if (_lastPlayRequestId == requestId) {
         print("Error playing song: $e");
+        _lastAttemptFailed = true;
         _buttonState.value = ButtonState.paused;
         notifyListeners();
       }
     }
+  }
+
+  /// Safe play/pause toggle for UI buttons to call instead of hitting
+  /// `player.play()`/`player.pause()` directly. If the last attempt to
+  /// start the current song actually failed (stream fetch error, etc.),
+  /// resuming would either do nothing or resume a stale/broken audio
+  /// source — so this retries loading the song properly instead.
+  Future<void> togglePlayPause() async {
+    if (_player.playing) {
+      await _player.pause();
+      return;
+    }
+
+    if (_lastAttemptFailed) {
+      final extras = _currentSongNotifier.value?.extras;
+      if (extras != null) {
+        await playSong(Map<String, dynamic>.from(extras));
+        return;
+      }
+    }
+
+    await _player.play();
   }
 
   /// If the given videoId already exists elsewhere in the queue, removes
@@ -534,6 +593,10 @@ class MediaPlayer extends ChangeNotifier {
   Future<void> playAll(List songs, {int index = 0}) async {
     if (songs.isEmpty) return;
 
+    _queueGeneration++;
+    final int myGeneration = _queueGeneration;
+    _lastAttemptFailed = false;
+
     autoFetching = true;
     _originalPlaylist = songs.map((s) => Map<String, dynamic>.from(s)).toList();
 
@@ -559,7 +622,7 @@ class MediaPlayer extends ChangeNotifier {
       if (songs.length > 1) {
         // Use unawaited to truly run in background
         Future(() async {
-        await _addRemainingToPlaylist(songs, index);
+        await _addRemainingToPlaylist(songs, index, myGeneration);
         autoFetching = false;
         });
       }
@@ -569,12 +632,14 @@ class MediaPlayer extends ChangeNotifier {
     } catch (e) {
       autoFetching = false;
       print('Error in playAll: $e');
+      _lastAttemptFailed = true;
       _buttonState.value = ButtonState.paused;
       notifyListeners();
     }
   }
 
-  Future<void> _addRemainingToPlaylist(List songs, int playedIndex) async {
+  Future<void> _addRemainingToPlaylist(
+      List songs, int playedIndex, int myGeneration) async {
     try {
       int added = 0;
       final remaining = <Map<String, dynamic>>[];
@@ -587,8 +652,12 @@ class MediaPlayer extends ChangeNotifier {
       }
 
       for (var song in remaining) {
+        // A newer playSong/playAll/etc. has taken over — stop adding to a
+        // queue that's no longer the active one.
+        if (myGeneration != _queueGeneration) return;
         try {
           final source = await _getAudioSource(song);
+          if (myGeneration != _queueGeneration) return;
           await _player.addAudioSource(source);
           added++;
         } catch (e) {
@@ -630,6 +699,8 @@ class MediaPlayer extends ChangeNotifier {
 
   Future<void> startRelated(Map<String, dynamic> song,
       {bool radio = false, bool shuffle = false, bool isArtist = false}) async {
+    _queueGeneration++;
+    _lastAttemptFailed = false;
     _originalPlaylist = [];
     await _player.clearAudioSources();
     if (!isArtist) {
@@ -648,6 +719,8 @@ class MediaPlayer extends ChangeNotifier {
   }
 
   Future<void> startPlaylistSongs(Map endpoint) async {
+    _queueGeneration++;
+    _lastAttemptFailed = false;
     _originalPlaylist = [];
     await _player.clearAudioSources();
     List songs = await GetIt.I<YTMusic>().getNextSongList(
@@ -664,6 +737,7 @@ class MediaPlayer extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    _queueGeneration++;
     await _player.stop();
     await _player.clearAudioSources();
     await _player.seek(Duration.zero, index: 0);
@@ -777,13 +851,24 @@ class MediaPlayer extends ChangeNotifier {
           GetIt.I<SettingsManager>().autofetchSongs &&
           autoFetching == false) {
         autoFetching = true;
-        List nextSongs = await GetIt.I<YTMusic>()
-            .getNextSongList(videoId: player.sequence[index].tag.id);
-        if (nextSongs.isNotEmpty) nextSongs.removeAt(0);
-        final songMaps = nextSongs.map((s) => Map<String, dynamic>.from(s)).toList();
-        _originalPlaylist.addAll(songMaps);
-        await _addSongListToQueue(nextSongs);
-        autoFetching = false;
+        // Remember which "song session" we're fetching related tracks for.
+        // If the user manually switches songs before this finishes, the
+        // fetched tracks belong to a queue that no longer exists — adding
+        // them now would corrupt (or silently take over) the new queue.
+        final int myGeneration = _queueGeneration;
+        try {
+          List nextSongs = await GetIt.I<YTMusic>()
+              .getNextSongList(videoId: player.sequence[index].tag.id);
+          if (myGeneration != _queueGeneration) return; // stale, abort
+          if (nextSongs.isNotEmpty) nextSongs.removeAt(0);
+          final songMaps =
+              nextSongs.map((s) => Map<String, dynamic>.from(s)).toList();
+          if (myGeneration != _queueGeneration) return; // stale, abort
+          _originalPlaylist.addAll(songMaps);
+          await _addSongListToQueue(nextSongs);
+        } finally {
+          autoFetching = false;
+        }
       }
     });
   }

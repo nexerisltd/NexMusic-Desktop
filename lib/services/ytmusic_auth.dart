@@ -241,6 +241,10 @@ class YTMusicAuthService extends ChangeNotifier {
 
   String? get cookieHeader => _cookieHeader;
 
+  /// For diagnostics only (see YtDebugLog) — whether we currently hold a
+  /// SAPISID value, without exposing the value itself in logs.
+  bool get hasSapisid => _sapisid != null;
+
   String buildAuthHeader() {
     final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000);
     final raw = '$timestamp $_sapisid $_origin';

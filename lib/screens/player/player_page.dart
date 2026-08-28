@@ -642,9 +642,7 @@ class _PlayerPageState extends State<PlayerPage> {
                   }
                   return IconButton(
                     onPressed: () {
-                      value == ButtonState.playing
-                          ? mediaPlayer.player.pause()
-                          : mediaPlayer.player.play();
+                      mediaPlayer.togglePlayPause();
                     },
                     icon: Icon(
                       value == ButtonState.playing

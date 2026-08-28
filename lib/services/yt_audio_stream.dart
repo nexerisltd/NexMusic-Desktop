@@ -6,6 +6,8 @@ import 'package:get_it/get_it.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'yt_client_config.dart';
+import 'yt_debug_log.dart';
 import 'ytmusic_auth.dart';
 
 class YouTubeAudioSource extends StreamAudioSource {
@@ -23,40 +25,75 @@ class YouTubeAudioSource extends StreamAudioSource {
   Future<AudioOnlyStreamInfo> _getStreamInfo() async {
     if (_cachedStreamInfo != null) return _cachedStreamInfo!;
 
-    final manifest = await ytExplode.videos.streams.getManifest(
-      videoId,
-      requireWatchPage: true,
-      ytClients: [YoutubeApiClient.androidVr],
-    );
-    Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
-    if (Platform.isMacOS || Platform.isIOS) {
-      final mp4Streams = supportedStreams
-          .where((s) => s.container.name == 'mp4' || s.container.name == 'm4a')
-          .toList();
-      if (mp4Streams.isNotEmpty) {
-        supportedStreams = mp4Streams;
+    final stopwatch = Stopwatch()..start();
+    final clients = resolveAudioClients();
+    final authAttached = audioClientsHaveAuth(clients);
+
+    try {
+      final manifest = await manifestResolutionLock.synchronized(
+        () => ytExplode.videos.streams.getManifest(
+          videoId,
+          requireWatchPage: true,
+          ytClients: clients,
+        ),
+      );
+
+      Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
+      if (Platform.isMacOS || Platform.isIOS) {
+        final mp4Streams = supportedStreams
+            .where((s) =>
+                s.container.name == 'mp4' || s.container.name == 'm4a')
+            .toList();
+        if (mp4Streams.isNotEmpty) {
+          supportedStreams = mp4Streams;
+        }
       }
+      supportedStreams = supportedStreams.sortByBitrate();
+
+      final audioStream = quality == 'high'
+          ? supportedStreams.lastOrNull
+          : supportedStreams.firstOrNull;
+
+      if (audioStream == null) {
+        throw Exception('No audio stream available for this video.');
+      }
+
+      YtDebugLog.event('manifest_fetch_ok', {
+        'videoId': videoId,
+        'authAttached': authAttached,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'resolvedClient': clientNameFromStreamUrl(audioStream.url),
+        'itag': audioStream.tag,
+      });
+
+      _cachedStreamInfo = audioStream;
+      return audioStream;
+    } catch (e) {
+      YtDebugLog.event('manifest_fetch_failed', {
+        'videoId': videoId,
+        'authAttached': authAttached,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'error': e.toString(),
+      });
+      rethrow;
     }
-    supportedStreams = supportedStreams.sortByBitrate();
-
-    final audioStream = quality == 'high'
-        ? supportedStreams.lastOrNull
-        : supportedStreams.firstOrNull;
-
-    if (audioStream == null) {
-      throw Exception('No audio stream available for this video.');
-    }
-
-    _cachedStreamInfo = audioStream;
-    return audioStream;
   }
 
   bool _looksLikeAuthFailure(Object e) {
     final message = e.toString().toLowerCase();
-    return message.contains('bot') ||
-        message.contains('403') ||
-        message.contains('sign in') ||
-        message.contains('unplayable');
+    final matched = <String>[
+      if (message.contains('bot')) 'bot',
+      if (message.contains('403')) '403',
+      if (message.contains('sign in')) 'sign in',
+      if (message.contains('unplayable')) 'unplayable',
+    ];
+    if (matched.isNotEmpty) {
+      YtDebugLog.event('auth_failure_heuristic_matched', {
+        'videoId': videoId,
+        'matched': matched.join(','),
+      });
+    }
+    return matched.isNotEmpty;
   }
 
   @override
@@ -69,6 +106,20 @@ class YouTubeAudioSource extends StreamAudioSource {
     required bool hasRetried,
   }) async {
     try {
+      // Diagnostic only (2026-08): confirms whether this Dart-side
+      // request() path is actually reached for a given playback attempt,
+      // vs. just_audio_media_kit/mpv resolving/fetching the stream some
+      // other way that bypasses it. If a playback failure is NOT preceded
+      // by this event in the log, the failure is happening below Dart
+      // entirely and our UA-matching/fail-fast fixes in _downloadStream
+      // never got a chance to run for it.
+      YtDebugLog.event('playback_request_entered', {
+        'videoId': videoId,
+        'start': start,
+        'end': end,
+        'hasRetried': hasRetried,
+      });
+
       final audioStream = await _getStreamInfo();
 
       var effectiveStart = start ?? 0;
@@ -95,6 +146,7 @@ class YouTubeAudioSource extends StreamAudioSource {
       // before giving up, instead of failing the whole song outright.
       if (!hasRetried && _looksLikeAuthFailure(e)) {
         try {
+          YtDebugLog.event('session_refresh_retry', {'videoId': videoId});
           await GetIt.I<YTMusicAuthService>().silentlyRefreshSession();
         } catch (_) {
           // Refresh itself failing just means we fall through to the
@@ -185,8 +237,28 @@ Future<void> handleAudioRequest(HttpRequest request) async {
 
     if (audioStreamInfo == null) {
       // 2. Get the Stream Manifest and select the audio stream
-      final manifest = await ytExplode.videos.streamsClient.getManifest(videoId,
-          requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
+      final stopwatch = Stopwatch()..start();
+      final clients = resolveAudioClients();
+      final authAttached = audioClientsHaveAuth(clients);
+
+      StreamManifest manifest;
+      try {
+        manifest = await manifestResolutionLock.synchronized(
+          () => ytExplode.videos.streamsClient.getManifest(
+            videoId,
+            requireWatchPage: true,
+            ytClients: clients,
+          ),
+        );
+      } catch (e) {
+        YtDebugLog.event('manifest_fetch_failed', {
+          'videoId': videoId,
+          'authAttached': authAttached,
+          'elapsedMs': stopwatch.elapsedMilliseconds,
+          'error': e.toString(),
+        });
+        rethrow;
+      }
 
       Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
       if (Platform.isMacOS || Platform.isIOS) {
@@ -205,6 +277,13 @@ Future<void> handleAudioRequest(HttpRequest request) async {
           : supportedStreams.firstOrNull;
 
       if (audioStreamInfo != null) {
+        YtDebugLog.event('manifest_fetch_ok', {
+          'videoId': videoId,
+          'authAttached': authAttached,
+          'elapsedMs': stopwatch.elapsedMilliseconds,
+          'resolvedClient': clientNameFromStreamUrl(audioStreamInfo.url),
+          'itag': audioStreamInfo.tag,
+        });
         _manifestCache[videoId] = (
           info: audioStreamInfo,
           expiry: DateTime.now().add(const Duration(hours: 1))
@@ -321,10 +400,19 @@ Future<AudioSource> getDirectUrlAudioSource(
     }
   }
 
+  final stopwatch = Stopwatch()..start();
+  final clients = resolveAudioClients();
+  final authAttached = audioClientsHaveAuth(clients);
+
   try {
     // 2. Fetch Manifest using singleton client (faster than creating new instance)
-    final manifest = await _ytClient.videos.streamsClient.getManifest(videoId,
-        requireWatchPage: true, ytClients: [YoutubeApiClient.androidVr]);
+    final manifest = await manifestResolutionLock.synchronized(
+      () => _ytClient.videos.streamsClient.getManifest(
+        videoId,
+        requireWatchPage: true,
+        ytClients: clients,
+      ),
+    );
     Iterable<AudioOnlyStreamInfo> supportedStreams = manifest.audioOnly;
 
     // Filter for mp4/m4a on Apple platforms for better compatibility
@@ -346,6 +434,14 @@ Future<AudioSource> getDirectUrlAudioSource(
       throw Exception('No audio stream available for this video.');
     }
 
+    YtDebugLog.event('manifest_fetch_ok', {
+      'videoId': videoId,
+      'authAttached': authAttached,
+      'elapsedMs': stopwatch.elapsedMilliseconds,
+      'resolvedClient': clientNameFromStreamUrl(audioStream.url),
+      'itag': audioStream.tag,
+    });
+
     // 3. Cache the URL for 1 hour
     _urlCache[videoId] = (
       url: audioStream.url.toString(),
@@ -354,6 +450,12 @@ Future<AudioSource> getDirectUrlAudioSource(
 
     return AudioSource.uri(audioStream.url, tag: tag);
   } catch (e) {
+    YtDebugLog.event('manifest_fetch_failed', {
+      'videoId': videoId,
+      'authAttached': authAttached,
+      'elapsedMs': stopwatch.elapsedMilliseconds,
+      'error': e.toString(),
+    });
     print('Error fetching URL for $videoId: $e');
     rethrow;
   }
@@ -363,6 +465,30 @@ Future<Stream<List<int>>> _downloadStream(Uri url, int start, int end) async {
   final client = HttpClient();
   final request = await client.getUrl(url);
   request.headers.add(HttpHeaders.rangeHeader, "bytes=$start-$end");
+
+  // Match the UA to whichever client actually produced this stream URL
+  // (see yt_client_config.dart) instead of relying on Dart's own default
+  // UA for every request regardless of origin client.
+  final matchedUa = userAgentForStreamUrl(url);
+  if (matchedUa != null) {
+    request.headers.set(HttpHeaders.userAgentHeader, matchedUa);
+  }
+
+  // Diagnostic only (2026-08): pairs with 'playback_request_entered' —
+  // confirms Dart's own HttpClient is the one making this byte-range GET
+  // (as opposed to mpv fetching the URL directly through some other path).
+  YtDebugLog.event('download_stream_start', {
+    'urlClient': clientNameFromStreamUrl(url),
+    'uaOverridden': matchedUa != null,
+    'range': '$start-$end',
+  });
+
   final response = await request.close();
+  if (response.statusCode == 403) {
+    YtDebugLog.event('stream_403', {
+      'urlClient': clientNameFromStreamUrl(url),
+      'uaOverridden': matchedUa != null,
+    });
+  }
   return response;
 }

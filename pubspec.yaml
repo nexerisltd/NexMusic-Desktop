@@ -103,5 +103,6 @@ flutter:
   generate: true
   assets:
     - icons/
+    - assets/solver/
 flutter_intl:
   enabled: true

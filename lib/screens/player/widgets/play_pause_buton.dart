@@ -41,9 +41,7 @@ class _PlayPauseButtonState extends State<PlayPauseButton>
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        GetIt.I<MediaPlayer>().player.playing
-            ? GetIt.I<MediaPlayer>().player.pause()
-            : GetIt.I<MediaPlayer>().player.play();
+        GetIt.I<MediaPlayer>().togglePlayPause();
       },
       child: ValueListenableBuilder(
         valueListenable: GetIt.I<MediaPlayer>().buttonState,
